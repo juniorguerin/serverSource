@@ -5,6 +5,9 @@
 
 #include "server.h"
 
+const int methods_num = 2;
+const char *supported_methods[] = {"GET", "PUT"};
+
 /*! \brief Verifica os argumentos passados para o servidor
  * \param[in] argc Numero de argumentos
  * \param[in] argv Argumentos recebidos com informacoes de porta e root
@@ -12,7 +15,7 @@
  * \return -1 caso algum erro tenha sido detectado
  * \return 0 caso OK
  */
-int analise_arguments(int argc, const char *argv[], Server *server)
+int analyse_arguments(int argc, const char *argv[], Server *server)
 {
   char *endptr = NULL;
   int arg_len = 0;
@@ -54,15 +57,15 @@ int create_listen_socket(const Server *server, int listen_backlog)
   servaddr.sin_family = AF_INET;
   servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
   servaddr.sin_port = htons(server->listen_port);
-  
+
   setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &yes,
-    sizeof(int));
+             sizeof(int));
   
-  if(bind(listen_socket, (struct sockaddr *)&servaddr,
+  if (bind(listen_socket, (struct sockaddr *)&servaddr,
     sizeof(servaddr)) == -1)
     return -1;
 
-  if(listen(listen_socket, listen_backlog) == -1)
+  if (listen(listen_socket, listen_backlog) == -1)
     return -1;
 
   return listen_socket;
@@ -143,7 +146,6 @@ void init_sets(Server *server)
   FD_ZERO(&server->sets.write_s);
   FD_ZERO(&server->sets.except_s);
   FD_SET(server->listenfd, &server->sets.read_s);
-  FD_SET(server->listenfd, &server->sets.write_s);
   server->maxfd_number = server->listenfd;
 
   for (i = 0; i <= server->max_cli_index; i++)
@@ -177,6 +179,7 @@ int read_client_input(Clients *client)
   {
     client->buffer = (char *) calloc(BUFFER_LEN, sizeof(char));
 
+    /* O que fazer quando nao puder alocar ? */
     if (client->buffer == NULL)
       return COULD_NOT_ALLOCATE;
   }
@@ -223,4 +226,106 @@ int verify_client_msg (Clients *client)
     client->write_flag = verify_double_line(client->buffer);
 
   return read_return;  
+}
+
+/* A FAZER */
+int verify_request(Clients *client, char *serv_root)
+{
+  char *method = NULL;
+  char *resource = NULL;
+  char *protocol = NULL;
+  Http_codes code = 0;
+
+  method = strtok(client->buffer, " ");
+  resource = strtok(NULL, " ");
+  protocol = strtok(NULL, "\r");
+  if (method == NULL || resource == NULL || protocol == NULL)
+  {
+    client->resp_status = BAD_REQUEST;
+    goto verify_req_error;
+  }
+
+  if (verify_cli_method(method, &client->method) != READ_OK)
+  {
+    client->resp_status = NOT_IMPLEMENTED;
+    goto verify_req_error;
+  }
+
+  if ((client->file = verify_cli_resource(resource, serv_root, &code))
+      == NULL)
+  {
+    client->resp_status = code;
+    goto verify_req_error;
+  }
+
+  if (method != NULL)
+    free(method);
+  if (resource != NULL)
+    free(resource);
+  if (protocol != NULL)
+    free(protocol);
+
+  return READ_OK;
+
+verify_req_error:
+  if (method != NULL)
+    free(method);
+  if (resource != NULL)
+    free(resource);
+  if (protocol != NULL)
+    free(protocol);
+
+  return WRONG_READ;
+}
+
+/* A FAZER */
+int verify_cli_method(char *method, int *request_method)
+{
+  int cont = 0;
+  int cmp_return = 0;
+
+  do
+  {
+    cmp_return = strncmp(method, supported_methods[cont],
+            strlen(supported_methods[cont]));
+    cont++;
+  } while (cont < methods_num && cmp_return != 0);
+
+  if (cmp_return != 0)
+    return WRONG_READ;
+  else
+  {
+    *request_method = cont - 1;
+    return READ_OK;
+  }
+}
+
+/*! A FAZER */
+FILE *verify_cli_resource(char *resource, char *serv_root, 
+    Http_codes *code)
+{
+  char *full_path;
+
+  if (strstr(resource, "../") != NULL)
+  {
+    *code = FORBIDDEN;
+    return NULL;
+  }
+
+  // testar caso os dois tenham barram (ou algum metodo pronto)
+  full_path = serv_root;
+  if (resource[strlen(resource) - 1] == '/' ||
+    serv_root[strlen(serv_root) - 1] == '/')
+    strcat(full_path, resource);
+  else
+    strcat(full_path, strcat("/", resource));
+
+  if (access(full_path, F_OK) == -1)
+  {
+    *code = NOT_FOUND;
+    return NULL;
+  }
+
+  // pensar em tipo de erro caso nao aloque (retornar erro de servidor?)
+  return fopen(full_path, "r");
 }

@@ -5,6 +5,9 @@
  *  "Id = 2"
  */
 
+#ifndef SERVER_H
+#define SERVER_H
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -34,21 +37,43 @@
 #undef MAX
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 
+extern const int methods_num;
+extern const char *supported_methods[];
+typedef enum Known_methods_
+{
+  GET,
+  PUT
+} Know_methods;
+
 typedef enum Read_status_
 {
   COULD_NOT_READ = -1,
   NO_END_READ = -2,
   COULD_NOT_ALLOCATE = -3,
   ZERO_READ = -4,
-  BUFER_OVERFLOW = -5,
+  BUFFER_OVERFLOW = -5,
+  WRONG_READ = -6,
   READ_OK = 1
 } Read_status;
+
+typedef enum Http_codes_
+{
+  OK = 200,
+  BAD_REQUEST = 400,
+  FORBIDDEN = 403,
+  NOT_FOUND = 404,
+  INTERNAL_ERROR = 500,
+  NOT_IMPLEMENTED = 501
+} Http_codes;
 
 typedef struct Clients_ {
   int sockfd;
   char *buffer;
   int bytes_buf;
   int write_flag;
+  int method;
+  FILE *file;
+  Http_codes resp_status;
 } Clients;
 
 typedef struct Server_fd_sets_ {
@@ -67,7 +92,7 @@ typedef struct Server_ {
   char serv_root[ROOT_LEN];
 } Server;
 
-int analise_arguments(int argc, const char *argv[], Server *server);
+int analyse_arguments(int argc, const char *argv[], Server *server);
 
 int create_listen_socket(const Server *server, int listen_backlog);
 
@@ -84,3 +109,11 @@ int read_client_input(Clients *client);
 int verify_double_line(char *buffer);
 
 int verify_client_msg (Clients *client);
+
+int verify_request(Clients *client, char *serv_root);
+
+int verify_cli_method(char *method, int *method_num);
+
+FILE *verify_cli_resource(char *resource, char *serv_root, Http_codes *code);
+
+#endif
