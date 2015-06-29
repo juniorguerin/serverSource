@@ -7,6 +7,81 @@
 
 const int methods_num = 2;
 const char *supported_methods[] = {"GET", "PUT"};
+const char supported_protocols[] = {"HTTP/1.0"};
+
+/*! \brief Funcao verifica uma linha dupla em um buffer que e' uma string
+ * \param[in] buffer Uma string contendo a mensagem
+ * \return 1 Caso tenha encontrado o fim da mensagem
+ * \return 0 Caso nao tenha encontrado o fim da mensagem
+ */
+static int verify_double_line(const char *buffer)
+{
+  if (strstr(buffer, "\r\n\r\n") == NULL)
+    if (strstr(buffer, "\n\n") == NULL)
+      return 0;
+    
+  return 1;
+}
+
+/* A FAZER */
+static int verify_cli_method(const char *method_str, Known_methods *cli_method)
+{
+  int cont = 0;
+  int cmp_return = 0;
+
+  do
+  {
+    cmp_return = strncmp(method_str, supported_methods[cont],
+            strlen(supported_methods[cont]));
+    cont++;
+  } while (cont < methods_num && cmp_return != 0);
+
+  if (cmp_return != 0)
+    return WRONG_READ;
+  else
+  {
+    *cli_method = cont - 1;
+    return READ_OK;
+  }
+}
+
+/*! A FAZER */
+static FILE *verify_cli_resource(const char *resource, char *serv_root, 
+    Http_code *code)
+{
+  char *full_path;
+  FILE *file;
+
+  if (strstr(resource, "../") != NULL)
+  {
+    *code = FORBIDDEN;
+    return NULL;
+  }
+
+  // testar caso os dois tenham barra (ou algum metodo pronto, ou supor que
+  // vira' certo?)
+  full_path = serv_root;
+  if (resource[strlen(resource) - 1] == '/' ||
+    serv_root[strlen(serv_root) - 1] == '/')
+    strcat(full_path, resource);
+  else
+    strcat(full_path, strcat("/", resource));
+
+  if (access(full_path, F_OK) == -1)
+  {
+    *code = NOT_FOUND;
+    return NULL;
+  }
+
+  file = fopen(full_path, "r");
+  if (!file)
+  {
+    *code = INTERNAL_ERROR;
+    return NULL;
+  }
+
+  return file;
+}
 
 /*! \brief Verifica os argumentos passados para o servidor
  * \param[in] argc Numero de argumentos
@@ -88,9 +163,9 @@ int make_connection(Server *server)
     return -1;
 
   for (i = 0; i < FD_SETSIZE; i++)
-    if (server->clients[i].sockfd < 0)
+    if (server->Client[i].sockfd < 0)
     {
-      server->clients[i].sockfd = connfd;
+      server->Client[i].sockfd = connfd;
       break;
     }
 
@@ -109,7 +184,7 @@ int make_connection(Server *server)
  * \param[out] client O cliente a ser considerado 
  * \param[out] set O fd_set em que esta o cliente
  */
-void close_client_connection(Clients *client, fd_set *set)
+void close_client_connection(Client *client, fd_set *set)
 {
   FD_CLR(client->sockfd, set);
   close(client->sockfd); 
@@ -132,7 +207,7 @@ void init_server(Server *server)
   server->maxfd_number = -1;
   
   for (i = 0; i < FD_SETSIZE; i++)
-    server->clients[i].sockfd = -1;
+    server->Client[i].sockfd = -1;
 }
 
 /*! \brief Inicializa os fd_sets e a referencia do maior descritor
@@ -150,13 +225,13 @@ void init_sets(Server *server)
 
   for (i = 0; i <= server->max_cli_index; i++)
   {
-    int cur_sock = server->clients[i].sockfd;
+    int cur_sock = server->Client[i].sockfd;
     if (cur_sock < 0)
       continue;
 
     server->maxfd_number = MAX(cur_sock, server->maxfd_number);
 
-    if(server->clients[i].write_flag)
+    if(server->Client[i].request_flag)
       FD_SET(cur_sock, &server->sets.write_s);
     else
       FD_SET(cur_sock, &server->sets.read_s);
@@ -169,9 +244,9 @@ void init_sets(Server *server)
  * necessario, e recebe uma mensagem (ou parte dela)
  * \param[out] server A estrutura do servidor
  * \return enum Read_status_ que lista os possiveis casos de erros
- * \notes E' feito um calloc do buffer_in de server_clients
+ * \notes E' feito um calloc do buffer_in de server_Client
  */
-int read_client_input(Clients *client)
+int read_client_input(Client *client)
 {
   int n_bytes = 0;
 
@@ -200,132 +275,104 @@ int read_client_input(Clients *client)
   return COULD_NOT_READ;
 }
 
-/*! \brief Funcao verifica uma linha dupla em um buffer que e' uma string
- * \param[in] buffer Uma string contendo a mensagem
- * \return 1 Caso tenha encontrado o fim da mensagem
- * \return 0 Caso nao tenha encontrado o fim da mensagem
- */
-int verify_double_line(char *buffer)
-{
-  if (strstr(buffer, "\r\n\r\n") == NULL)
-    if (strstr(buffer, "\n\n") == NULL)
-      return 0;
-    
-  return 1;
-}
-
 /*! \brief Verifica entrada de dados do client e determina quando a mensagem
  * chegou ao fim
- * \param[out] client A estrutura de clients
+ * \param[out] client A estrutura de Client
  */
-int verify_client_msg (Clients *client)
+int verify_client_msg (Client *client)
 {
   int read_return = 0;
 
   if ((read_return = read_client_input(client)) == READ_OK)
-    client->write_flag = verify_double_line(client->buffer);
+    client->request_flag = verify_double_line(client->buffer);
 
   return read_return;  
 }
 
 /* A FAZER */
-int verify_request(Clients *client, char *serv_root)
+int verify_request(Client *client, char *serv_root)
 {
-  char *method = NULL;
-  char *resource = NULL;
-  char *protocol = NULL;
-  Http_codes code = 0;
+  char method[METHOD_LEN + 1];
+  char resource[RESOURCE_LEN + 1];
+  char protocol[PROTOCOL_LEN + 1];
+  Http_code code = 0;
+  int num_read = 0;
 
-  method = strtok(client->buffer, " ");
-  resource = strtok(NULL, " ");
-  protocol = strtok(NULL, "\r");
-  if (method == NULL || resource == NULL || protocol == NULL)
+  memset(method, 0, sizeof(method));
+  memset(resource, 0, sizeof(resource));
+  memset(protocol, 0, sizeof(protocol));
+  num_read = sscanf(client->buffer, "%" STR(METHOD_LEN) "[^ ] %"
+      STR(RESOURCE_LEN) "[^ ] %" STR(PROTOCOL_LEN) "[^\r\n]", method, 
+      resource, protocol);
+  if (num_read != 3)
   {
     client->resp_status = BAD_REQUEST;
-    goto verify_req_error;
+    return WRONG_READ;
   }
 
   if (verify_cli_method(method, &client->method) != READ_OK)
   {
     client->resp_status = NOT_IMPLEMENTED;
-    goto verify_req_error;
+    return WRONG_READ;
   }
 
   if ((client->file = verify_cli_resource(resource, serv_root, &code))
       == NULL)
   {
     client->resp_status = code;
-    goto verify_req_error;
+    return WRONG_READ;
   }
 
-  if (method != NULL)
-    free(method);
-  if (resource != NULL)
-    free(resource);
-  if (protocol != NULL)
-    free(protocol);
+  if (strcmp(protocol, supported_protocols) != 0)
+  {
+    client->resp_status = BAD_REQUEST;
+    return WRONG_READ;
+  }
 
+  client->resp_status = OK;
   return READ_OK;
-
-verify_req_error:
-  if (method != NULL)
-    free(method);
-  if (resource != NULL)
-    free(resource);
-  if (protocol != NULL)
-    free(protocol);
-
-  return WRONG_READ;
 }
 
-/* A FAZER */
-int verify_cli_method(char *method, int *request_method)
+/*static char http_code_char(Http_code http_code)
 {
-  int cont = 0;
-  int cmp_return = 0;
 
+  return NULL;
+}*/
+
+static int create_header(Client *client)
+{
+  printf("%s",client->buffer);
+  return 0;
+}
+
+int build_response(Client *client)
+{
+  FILE *cur_file = NULL;
+  int bytes_read = 0;
+  // Se der erro ao ler ou enviar, continua fluxo normal (coloca um contador de
+  // quantidade de tentativas e fecha a conexao apo's isto)
+  
+  if (client->bytes_buf == 0)
+  {
+    if (create_header(client) < 0)
+      return -1;
+  }
+  else
+  {
+    memset(client->buffer, 0, sizeof(*client->buffer));
+    client->bytes_buf = 0;
+  }
+
+  cur_file = client->file;
   do
   {
-    cmp_return = strncmp(method, supported_methods[cont],
-            strlen(supported_methods[cont]));
-    cont++;
-  } while (cont < methods_num && cmp_return != 0);
+    bytes_read = fread(client->buffer + client->bytes_buf, sizeof(char), 
+        BUFFER_LEN - client->bytes_buf, cur_file);
+  } while (bytes_read < BUFFER_LEN - client->bytes_buf && bytes_read != 0);
 
-  if (cmp_return != 0)
-    return WRONG_READ;
-  else
-  {
-    *request_method = cont - 1;
-    return READ_OK;
-  }
+  if (bytes_read == 0)
+    return -1;
+
+  return 0;
 }
 
-/*! A FAZER */
-FILE *verify_cli_resource(char *resource, char *serv_root, 
-    Http_codes *code)
-{
-  char *full_path;
-
-  if (strstr(resource, "../") != NULL)
-  {
-    *code = FORBIDDEN;
-    return NULL;
-  }
-
-  // testar caso os dois tenham barram (ou algum metodo pronto)
-  full_path = serv_root;
-  if (resource[strlen(resource) - 1] == '/' ||
-    serv_root[strlen(serv_root) - 1] == '/')
-    strcat(full_path, resource);
-  else
-    strcat(full_path, strcat("/", resource));
-
-  if (access(full_path, F_OK) == -1)
-  {
-    *code = NOT_FOUND;
-    return NULL;
-  }
-
-  // pensar em tipo de erro caso nao aloque (retornar erro de servidor?)
-  return fopen(full_path, "r");
-}

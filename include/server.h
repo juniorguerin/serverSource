@@ -33,9 +33,16 @@
 #define ROOT_LEN 2048
 #define PORT_NUMBER_BASE 10
 #define PORT_LEN 8
+#define PROTOCOL_LEN 9
+#define METHOD_LEN 5 
+#define RESOURCE_LEN 200
 
 #undef MAX
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
+
+#undef STR
+#define STR_(x) #x
+#define STR(x) STR_(x)
 
 extern const int methods_num;
 extern const char *supported_methods[];
@@ -43,7 +50,9 @@ typedef enum Known_methods_
 {
   GET,
   PUT
-} Know_methods;
+} Known_methods;
+
+extern const char supported_protocols[];
 
 typedef enum Read_status_
 {
@@ -56,7 +65,7 @@ typedef enum Read_status_
   READ_OK = 1
 } Read_status;
 
-typedef enum Http_codes_
+typedef enum Http_code_
 {
   OK = 200,
   BAD_REQUEST = 400,
@@ -64,17 +73,17 @@ typedef enum Http_codes_
   NOT_FOUND = 404,
   INTERNAL_ERROR = 500,
   NOT_IMPLEMENTED = 501
-} Http_codes;
+} Http_code;
 
-typedef struct Clients_ {
+typedef struct Client_ {
   int sockfd;
   char *buffer;
   int bytes_buf;
-  int write_flag;
-  int method;
+  int request_flag;
+  Known_methods method;
   FILE *file;
-  Http_codes resp_status;
-} Clients;
+  Http_code resp_status;
+} Client;
 
 typedef struct Server_fd_sets_ {
   fd_set write_s;
@@ -83,7 +92,7 @@ typedef struct Server_fd_sets_ {
 } Server_fd_sets;
 
 typedef struct Server_ {
-  Clients clients[FD_SETSIZE];
+  Client Client[FD_SETSIZE];
   int max_cli_index;
   Server_fd_sets sets;
   long listen_port;
@@ -98,22 +107,24 @@ int create_listen_socket(const Server *server, int listen_backlog);
 
 int make_connection(Server *server);
 
-void close_client_connection(Clients *clients, fd_set *set);
+void close_client_connection(Client *Client, fd_set *set);
 
 void init_server(Server *server);
 
 void init_sets(Server *server);
 
-int read_client_input(Clients *client);
+int read_client_input(Client *client);
 
-int verify_double_line(char *buffer);
+//int verify_double_line(const char *buffer);
 
-int verify_client_msg (Clients *client);
+int verify_client_msg (Client *client);
 
-int verify_request(Clients *client, char *serv_root);
+int verify_request(Client *client, char *serv_root);
 
-int verify_cli_method(char *method, int *method_num);
+//int verify_cli_method(char *method_str, Known_methods *cli_method);
 
-FILE *verify_cli_resource(char *resource, char *serv_root, Http_codes *code);
+//FILE *verify_cli_resource(char *resource, char *serv_root, Http_code *code);
+
+int build_response(Client *client);
 
 #endif

@@ -52,7 +52,7 @@ int main(int argc, const char **argv)
 
     for (i = 0; i <= server.max_cli_index; i++)
     {
-      Clients *cur_client = &server.clients[i];
+      Client *cur_client = &server.Client[i];
       if ((sockfd = cur_client->sockfd) < 0)
         continue;
 
@@ -64,7 +64,7 @@ int main(int argc, const char **argv)
           continue;
         }
 
-        if (cur_client->write_flag == 1)
+        if (cur_client->request_flag == 1)
           if (verify_request(cur_client, server.serv_root) != READ_OK)
             continue;
 
@@ -74,12 +74,7 @@ int main(int argc, const char **argv)
      
       if (FD_ISSET(sockfd, &server.sets.write_s))
       {
-        int num_bytes = write(sockfd, server.clients[i].buffer,
-        BUFFER_LEN);
-
-        if (num_bytes <= 0)
-          continue;
-        close_client_connection(&server.clients[i], &server.sets.write_s);
+        build_response(cur_client);
       }
 
       if (FD_ISSET(sockfd, &server.sets.except_s))
