@@ -74,11 +74,26 @@ int main(int argc, const char **argv)
      
       if (FD_ISSET(sockfd, &server.sets.write_s))
       {
-        build_response(cur_client);
+        if (build_response(cur_client) != 0 || 
+            send_response(cur_client) != 0)
+        {
+          close_client_connection(cur_client, &server.sets.write_s);
+          continue;
+        }
+
+        if (cur_client->request_flag != 1)
+        {
+          close_client_connection(cur_client, &server.sets.write_s);
+          continue;
+        }
       }
 
       if (FD_ISSET(sockfd, &server.sets.except_s))
       {
+        if (cur_client->request_flag == 1)
+          close_client_connection(cur_client, &server.sets.write_s);
+        else
+          close_client_connection(cur_client, &server.sets.read_s);
       }
     }
   }

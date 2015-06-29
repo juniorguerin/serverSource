@@ -25,7 +25,7 @@
 #define HOST_LEN 128
 #define PORT_LEN 8
 #define PATH_LEN 512
-#define BUFFER_LEN BUFSIZ 
+#define BUFFER_LEN 2048 
 #define MESSAGE_LEN 512
 #define FLAG_WRITE "-f"
 #define HEADER_LEN BUFSIZ

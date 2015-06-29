@@ -4,7 +4,7 @@
 CC = gcc
 
 # Variavel de opcoes de compilacao e bibliotecas estaticas
-CFLAGS = -W -Werror -Wall -g 
+CFLAGS = -W -Werror -Wall -Wextra -g 
 
 # Variaveis de paths
 INCLUDE = ./include
