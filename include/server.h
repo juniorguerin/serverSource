@@ -70,7 +70,6 @@ typedef enum Read_status_
   COULD_NOT_READ = -1, /*!< Nao foi possivel ler */
   NO_END_READ = -2, /*!< Nao encontrou um fim na leitura */
   COULD_NOT_ALLOCATE = -3, /*!< Erro de alocacao */
-  ZERO_READ = -4, /*!< Leu conteudo vazio */
   BUFFER_OVERFLOW = -5, /*!< Conteudo e maior do que a variavel */
   WRONG_READ = -6, /*!< Leitura de strings mal formadas */
   READ_OK = 1 /*!< Sucesso na leitura */
@@ -92,10 +91,11 @@ typedef struct Client_ {
   char *buffer; /*!< Buffer do cliente */
   int pos_buf; /*!< Posicao da escrita no buffer */
   int request_flag; /*!< Status da comunicacao com o servidor */
+  int nonblock_write; /*!< Status de leitura non-blocking */
   Known_methods method; /*!< Metodo usado na request */
   Known_protocols protocol; /*!< Protocolo usado na request */
-  FILE *file; /*!< Arquivo para o recurso solicitado */
   Http_code resp_status; /*!< Codigo para a resposta ao cliente */
+  FILE *file; /*!< Arquivo para o recurso solicitado */
 } Client;
 
 /* Guarda as variaveis do tipo fd_set vinculadas ao servidor */
@@ -122,7 +122,7 @@ int create_listen_socket(const Server *server, int listen_backlog);
 
 int make_connection(Server *server);
 
-void close_client_connection(Client *Client, fd_set *set);
+void close_client_connection(Client *Client);
 
 void init_server(Server *server);
 
@@ -130,7 +130,7 @@ void init_sets(Server *server);
 
 int read_client_input(Client *client);
 
-int verify_client_msg (Client *client);
+int recv_client_msg (Client *client);
 
 int verify_request(Client *client, char *serv_root);
 

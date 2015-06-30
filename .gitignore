@@ -3,4 +3,4 @@
 *.swp
 recuperadorweb
 servidorweb
-server_files/
+server_files/*

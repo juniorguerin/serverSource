@@ -1,10 +1,10 @@
 # Makefile dos projetos
 
 # Variavel que define o compilador
-CC = gcc
+CC = clang
 
 # Variavel de opcoes de compilacao e bibliotecas estaticas
-CFLAGS = -W -Werror -Wall -Wextra -g 
+CFLAGS = -Werror -Wall -Wextra -g 
 
 # Variaveis de paths
 INCLUDE = ./include

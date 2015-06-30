@@ -225,10 +225,7 @@ static int extr_req_params(Client *client, char *method,
   num_read = sscanf(client->buffer, "%" STR(METHOD_LEN) "[^ ] %"
                     STR(RESOURCE_LEN) "[^ ] %" STR(PROTOCOL_LEN) 
                     "[^\r\n]", method, resource, protocol);
-  
-  memset(client->buffer, 0, sizeof(*client->buffer));
-  client->pos_buf = 0;
-  
+   
   if (num_read != 3)
     return WRONG_READ;
 
@@ -283,7 +280,7 @@ int create_listen_socket(const Server *server, int listen_backlog)
   listen_socket = socket(AF_INET, SOCK_STREAM, 0);
   if (listen_socket == 1)
     return -1;
-
+  
   bzero(&servaddr, sizeof(servaddr));
   servaddr.sin_family = AF_INET;
   servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -316,13 +313,13 @@ int make_connection(Server *server)
   socklen_t cli_length = sizeof(cliaddr);
 
   connfd = accept(server->listenfd, (struct sockaddr *)&cliaddr, 
-                  &cli_length);
+                  &cli_length); 
   if (connfd < 0)
     return -1;
 
   for (i = 0; i < FD_SETSIZE; i++)
     if (server->Client[i].sockfd < 0)
-    {
+    { 
       server->Client[i].sockfd = connfd;
       break;
     }
@@ -330,7 +327,7 @@ int make_connection(Server *server)
   if (i == FD_SETSIZE)
     return -1;
 
-  FD_SET(connfd, &server->sets.read_s);
+  //FD_SET(connfd, &server->sets.read_s);
  
   server->maxfd_number = MAX(connfd, server->maxfd_number);
   server->max_cli_index = MAX(i, server->max_cli_index);
@@ -343,9 +340,8 @@ int make_connection(Server *server)
  * \param[out] client O cliente a ser considerado 
  * \param[out] set O fd_set em que esta o cliente
  */
-void close_client_connection(Client *client, fd_set *set)
+void close_client_connection(Client *client)
 {
-  FD_CLR(client->sockfd, set);
   close(client->sockfd); 
 
   if (client->buffer != NULL)
@@ -429,17 +425,18 @@ int read_client_input(Client *client)
   if (client->pos_buf == BUFFER_LEN - 1)
     return BUFFER_OVERFLOW;
 
-  if ((n_bytes = read(client->sockfd, client->buffer +
-                      client->pos_buf, BUFFER_LEN - client->pos_buf - 1)) >  0)
-  {
-    client->pos_buf += n_bytes;
-    return READ_OK;
+  if ((n_bytes = recv(client->sockfd, client->buffer +
+                      client->pos_buf, BUFFER_LEN - client->pos_buf - 1,
+                      MSG_DONTWAIT)) < 0)
+  {  
+    if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+      return READ_OK;
+    else
+      return COULD_NOT_READ;
   }
-
-  if (n_bytes == 0)
-    return ZERO_READ;
     
-  return COULD_NOT_READ;
+  client->pos_buf += n_bytes;
+  return READ_OK; 
 }
 
 /*! \brief Verifica entrada de dados do client e determina quando a mensagem
@@ -447,7 +444,7 @@ int read_client_input(Client *client)
  *
  * \param[out] client A estrutura de Client
  */
-int verify_client_msg (Client *client)
+int recv_client_msg (Client *client)
 {
   int read_return = 0;
 
@@ -478,6 +475,12 @@ int verify_request(Client *client, char *serv_root)
     client->resp_status = BAD_REQUEST;
     return WRONG_READ;
   }
+  
+  if (verify_cli_protocol(protocol, &client->protocol) != READ_OK)
+  {
+    client->resp_status = BAD_REQUEST;
+    return WRONG_READ;
+  }
 
   if (verify_cli_method(method, &client->method) != READ_OK)
   {
@@ -492,19 +495,16 @@ int verify_request(Client *client, char *serv_root)
     return WRONG_READ;
   }
 
-  if (verify_cli_protocol(protocol, &client->protocol) != READ_OK)
-  {
-    client->resp_status = BAD_REQUEST;
-    return WRONG_READ;
-  }
-
+  memset(client->buffer, 0, sizeof(*client->buffer));
+  client->pos_buf = 0;
   client->resp_status = OK;
   return READ_OK;
 }
 
 /*! \brief Funcao que gera a resposta ao cliente e armazena em um buffer
  *
- * \param[out] client Estrutura que contem o buffer e informacoes do cliente
+ * \param[out] client Estrutura que contem o buffer e informacoes do cliente (o
+ * buffer deve estar inicializado)
  *
  * \return 0 Caso OK
  * \return -1 Caso algum erro
@@ -512,18 +512,20 @@ int verify_request(Client *client, char *serv_root)
 int build_response(Client *client)
 {
   int bytes_read = 0;
- 
-  if (client->pos_buf == 0)
+
+  /* Nao ha necessidade de escrever no buffer atual - sera'
+   * necessa'rio enviar novamente */
+  if (client->nonblock_write)
+    return 0;
+
+  if (!client->pos_buf)
   {
     if (create_header(client) < 0)
       return -1;
   }
   else
-  {
-    memset(client->buffer, 0, sizeof(*client->buffer));
     client->pos_buf = 0;
-  }
-  
+
   if (client->resp_status == OK)
   {
     bytes_read = fread(client->buffer + client->pos_buf, sizeof(char),
@@ -549,23 +551,22 @@ int build_response(Client *client)
  */
  int send_response(Client *client)
 {
-  int cont_send = 0;
   int sent_bytes = 0;
 
-  do
+  if((sent_bytes = send(client->sockfd, client->buffer, client->pos_buf,
+                        MSG_DONTWAIT)) < 0)
   {
-    sent_bytes = send(client->sockfd, client->buffer, client->pos_buf, 0);
-    cont_send++;
+    if (errno == EINTR || errno == EAGAIN || errno ==
+    EWOULDBLOCK)
+    {
+      client->nonblock_write = 1;
+      return 0;
+    }
+    else
+      return -1;
+  }
 
-    if (sent_bytes == -1 && errno == EINTR)
-      usleep(300);
-
-  } while (sent_bytes == -1 && errno == EINTR && 
-           cont_send <= LIMIT_SEND);
-
-  if (cont_send == LIMIT_SEND)
-    return -1;
-
+  client->nonblock_write = 0;
   return 0;
 }
 
