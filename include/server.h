@@ -2,7 +2,6 @@
  *  \file server.h
  *  \brief Header de funcoes utilizadas no servidor
  *
- *  "Id = 2"
  */
 
 #ifndef SERVER_H
@@ -86,7 +85,8 @@ typedef enum Http_code_
 } Http_code;
 
 /* Guarda informacoes sobre os clientes conectados */
-typedef struct Client_ {
+typedef struct Client_ 
+{
   int sockfd; /*!< Socket de conexao */
   char *buffer; /*!< Buffer do cliente */
   int pos_buf; /*!< Posicao da escrita no buffer */
@@ -99,14 +99,16 @@ typedef struct Client_ {
 } Client;
 
 /* Guarda as variaveis do tipo fd_set vinculadas ao servidor */
-typedef struct Server_fd_sets_ {
+typedef struct Server_fd_sets_ 
+{
   fd_set write_s; /*!< fd_set de escrita */
   fd_set read_s; /*!< fd_set de leitura */
   fd_set except_s; /*!< fd_set de excecao */
 } Server_fd_sets;
 
 /* Informacoes a respeito do estado atual do servidor */
-typedef struct Server_ {
+typedef struct Server_ 
+{
   Client Client[FD_SETSIZE]; /*!< Estrutura de clientes conectados */
   int max_cli_index; /*!< Maior indice utilizado na estrutura de clientes */
   Server_fd_sets sets; /*!< Os fd_sets */
