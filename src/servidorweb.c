@@ -55,14 +55,14 @@ int main(int argc, const char **argv)
 
       if (FD_ISSET(sockfd, &server.sets.read_s))
       {
-        if (recv_client_msg(cur_client) != READ_OK)
+        if (recv_client_msg(cur_client) < 0)
         {
           close_client_connection(cur_client);
           continue;
         }
 
         if (cur_client->request_flag == 1)
-          if (verify_request(cur_client, server.serv_root) != READ_OK)
+          if (verify_request(cur_client, server.serv_root) < 0)
             continue;
 
         if (--nready <= 0)

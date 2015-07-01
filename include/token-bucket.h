@@ -7,8 +7,9 @@
 #define TOKEN_BUCKET_H
 
 #include <time.h>
-#include "client.h"
 #include "server.h"
+
+#define CONN_VEL 1024
 
 typedef struct Token_bucket_
 {

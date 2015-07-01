@@ -49,11 +49,11 @@ static int verify_cli_method(const char *method_str,
   } while (cont < methods_num && cmp_return != 0);
 
   if (cmp_return != 0)
-    return WRONG_READ;
+    return -1;
   else
   {
     *cli_method = cont - 1;
-    return READ_OK;
+    return 0;
   }
 }
 
@@ -194,11 +194,11 @@ static int verify_cli_protocol(char *protocol,
   } while (cont < protocols_num && cmp_return != 0);
 
   if (cmp_return != 0)
-    return WRONG_READ;
+    return -1;
   else
   {
     *cli_protocol = cont - 1;
-    return READ_OK;
+    return 0;
   }
 }
 
@@ -227,9 +227,9 @@ static int extr_req_params(Client *client, char *method,
                     "[^\r\n]", method, resource, protocol);
    
   if (num_read != 3)
-    return WRONG_READ;
+    return -1;
 
-  return READ_OK;
+  return 0;
 }
 
 /*! \brief Verifica os argumentos passados para o servidor
@@ -417,26 +417,25 @@ int read_client_input(Client *client)
   {
     client->buffer = (char *) calloc(BUFFER_LEN, sizeof(char));
 
-    /* O que fazer quando nao puder alocar ? */
     if (client->buffer == NULL)
-      return COULD_NOT_ALLOCATE;
+      return -1;
   }
    
   if (client->pos_buf == BUFFER_LEN - 1)
-    return BUFFER_OVERFLOW;
+    return -1;
 
   if ((n_bytes = recv(client->sockfd, client->buffer +
                       client->pos_buf, BUFFER_LEN - client->pos_buf - 1,
                       MSG_DONTWAIT)) < 0)
   {  
     if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
-      return READ_OK;
+      return 0;
     else
-      return COULD_NOT_READ;
+      return -1;
   }
     
   client->pos_buf += n_bytes;
-  return READ_OK; 
+  return 0; 
 }
 
 /*! \brief Verifica entrada de dados do client e determina quando a mensagem
@@ -446,12 +445,11 @@ int read_client_input(Client *client)
  */
 int recv_client_msg (Client *client)
 {
-  int read_return = 0;
+  if (read_client_input(client) < 0)
+    return -1;
 
-  if ((read_return = read_client_input(client)) == READ_OK)
-    client->request_flag = verify_double_line(client->buffer);
-
-  return read_return;  
+  client->request_flag = verify_double_line(client->buffer);
+  return 0; 
 }
 
 /* \brief Verifique a mensagem recebida de um cliente, analisando o metodo, o
@@ -470,35 +468,35 @@ int verify_request(Client *client, char *serv_root)
   char protocol[PROTOCOL_LEN + 1];
   Http_code code = 0;
 
-  if (extr_req_params(client, method, resource, protocol) != READ_OK)
+  if (extr_req_params(client, method, resource, protocol) < 0)
   {
     client->resp_status = BAD_REQUEST;
-    return WRONG_READ;
+    return -1;
   }
   
-  if (verify_cli_protocol(protocol, &client->protocol) != READ_OK)
+  if (verify_cli_protocol(protocol, &client->protocol) < 0)
   {
     client->resp_status = BAD_REQUEST;
-    return WRONG_READ;
+    return -1;
   }
 
-  if (verify_cli_method(method, &client->method) != READ_OK)
+  if (verify_cli_method(method, &client->method) < 0)
   {
     client->resp_status = NOT_IMPLEMENTED;
-    return WRONG_READ;
+    return -1;
   }
 
   if ((client->file = verify_cli_resource(resource, serv_root, &code))
        == NULL)
   {
     client->resp_status = code;
-    return WRONG_READ;
+    return -1;
   }
 
   memset(client->buffer, 0, sizeof(*client->buffer));
   client->pos_buf = 0;
   client->resp_status = OK;
-  return READ_OK;
+  return 0;
 }
 
 /*! \brief Funcao que gera a resposta ao cliente e armazena em um buffer

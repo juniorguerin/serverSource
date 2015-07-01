@@ -86,7 +86,7 @@ int token_bucket_withdraw(const unsigned int remove_tokens,
 int update_all_buckets(Client *clients)
 {
   int i = 0;
-  unsigned float min_time = UINT_MAX;
+  float min_time = UINT_MAX;
 
   for (i = 0; i < FD_SETSIZE; i++)
   {

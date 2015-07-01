@@ -22,9 +22,9 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
-#include <unistd.h>
 #include <sys/wait.h>
 #include <sys/un.h>
+#include <unistd.h>
 
 #define BUFFER_LEN BUFSIZ
 #define REQUEST_SIZE BUFSIZ
@@ -63,17 +63,6 @@ typedef enum Known_protocols_
   HTTP11
 } Known_protocols;
 
-/* Tipos de erro de leitura */
-typedef enum Read_status_
-{
-  COULD_NOT_READ = -1, /*!< Nao foi possivel ler */
-  NO_END_READ = -2, /*!< Nao encontrou um fim na leitura */
-  COULD_NOT_ALLOCATE = -3, /*!< Erro de alocacao */
-  BUFFER_OVERFLOW = -5, /*!< Conteudo e maior do que a variavel */
-  WRONG_READ = -6, /*!< Leitura de strings mal formadas */
-  READ_OK = 1 /*!< Sucesso na leitura */
-} Read_status;
-
 /* Os codigos http */
 typedef enum Http_code_
 {
@@ -96,6 +85,7 @@ typedef struct Client_
   Known_protocols protocol; /*!< Protocolo usado na request */
   Http_code resp_status; /*!< Codigo para a resposta ao cliente */
   FILE *file; /*!< Arquivo para o recurso solicitado */
+
 } Client;
 
 /* Guarda as variaveis do tipo fd_set vinculadas ao servidor */
