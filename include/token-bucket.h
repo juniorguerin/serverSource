@@ -9,8 +9,6 @@
 #include <time.h>
 #include "server.h"
 
-#define CONN_VEL 1024
-
 typedef struct Token_bucket_
 {
   unsigned int rate; /*!< Tokens adicionados em milisegundos */
@@ -20,15 +18,15 @@ typedef struct Token_bucket_
   unsigned int min_time; /*!< Tempo minimo para receber buffer */
 } Token_bucket;
 
-void token_bucket_init(const unsigned int rate, const unsigned int burst,
+void bucket_init(const unsigned int velocity, const unsigned int burst,
                        Token_bucket *bucket);
 
-void token_bucket_set(const unsigned int rate, const unsigned int burst,
+void bucket_set(const unsigned int velocity, const unsigned int burst,
                       Token_bucket *bucket);
 
-int token_bucket_withdraw(const unsigned int remove_tokens,
+int bucket_withdraw(const unsigned int remove_tokens,
                           Token_bucket *bucket);
 
-int update_all_buckets(Client *clients);
+int buckets_get_time(Client *clients);
 
 #endif

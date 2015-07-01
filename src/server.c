@@ -5,9 +5,7 @@
 
 #include "server.h"
 
-const int methods_num = 2;
 const char *supported_methods[] = {"GET", "PUT"};
-const int protocols_num = 2;
 const char *supported_protocols[] = {"HTTP/1.0", "HTTP/1.1"};
 
 /*! \brief Funcao verifica uma linha dupla em um buffer que e' uma string
@@ -19,11 +17,10 @@ const char *supported_protocols[] = {"HTTP/1.0", "HTTP/1.1"};
  */
 static int verify_double_line(const char *buffer)
 {
-  if (strstr(buffer, "\r\n\r\n") == NULL)
-    if (strstr(buffer, "\n\n") == NULL)
-      return 0;
+  if (strstr(buffer, "\r\n\r\n") == NULL || strstr(buffer, "\n\n") == NULL)
+    return 1;
     
-  return 1;
+  return 0;
 }
 
 /*! \brief Verifica o metodo passado na requisicao do cliente
@@ -32,11 +29,11 @@ static int verify_double_line(const char *buffer)
  * \param[out] cli_method Variavel que armazena qual o metodo passado pelo
  * cliente
  *
- * \return READ_OK Caso ok
- * \return WRONG_READ Caso haja algum erro na leitura
+ * \return 0 Caso ok
+ * \return -1 Caso haja algum erro na leitura
  */
 static int verify_cli_method(const char *method_str, 
-                             Known_methods *cli_method)
+                             Http_methods *cli_method)
 {
   int cont = 0;
   int cmp_return = 0;
@@ -46,7 +43,7 @@ static int verify_cli_method(const char *method_str,
     cmp_return = strncmp(method_str, supported_methods[cont],
                          strlen(supported_methods[cont]));
     cont++;
-  } while (cont < methods_num && cmp_return != 0);
+  } while (cont < NUM_METHOD && cmp_return != 0);
 
   if (cmp_return != 0)
     return -1;
@@ -79,33 +76,25 @@ static void process_path(const char *resource, char *full_path)
  * \param[in] serv_root Path do root do servidor
  * \param[out] code Variavel que armazena o codigo http da resposta do cliente
  *
- * \return File correspondente ao recurso, caso OK
- * \return NULL caso algum erro
+ * \return Htpp_code da mensagem do cliente
  */
-static FILE *verify_cli_resource(const char *resource, 
-                                 char *serv_root, Http_code *code)
+Http_code verify_cli_resource(const char *resource, char *serv_root, 
+                               FILE **file)
 {
   char full_path[RESOURCE_LEN];
-  FILE *file = NULL;
 
   memset(full_path, 0, sizeof(full_path));
   strcpy(full_path, serv_root);
 
   if (strstr(resource, "../") != NULL)
-  {
-    *code = FORBIDDEN;
-    return NULL;
-  }
+    return FORBIDDEN;
 
   process_path(resource, full_path);
-  file = fopen(full_path, "r");
-  if (!file)
-  {
-    *code = NOT_FOUND;
-    return NULL;
-  }
+  *file = fopen(full_path, "r");
+  if (!*file)
+    return NOT_FOUND;
 
-  return file;
+  return OK;
 }
 
 /*! \brief Funcao que analisa um codigo http e retorna a string do status
@@ -153,21 +142,21 @@ static char *http_code_char(const Http_code http_code)
  */
 static int create_header(Client *client)
 {
-  char header[HEADER_LEN];
   int resp_status = 0;
   int printf_return = 0;
   
   resp_status = client->resp_status;
-  memset(header, 0, sizeof(header));
 
-  printf_return = snprintf(header, HEADER_LEN,  "%s %d %s\r\n\r\n", 
-         supported_protocols[client->protocol], resp_status,
-         http_code_char(client->resp_status));
-  if (printf_return >= HEADER_LEN)
+  printf_return = snprintf(client->buffer, BUFFER_LEN - 1,
+                           "%s %d %s\r\n\r\n", 
+                           supported_protocols[client->protocol], 
+                           resp_status, 
+                           http_code_char(client->resp_status));
+
+  if (printf_return >= BUFFER_LEN)
     return -1;
 
-  strcpy(client->buffer,header);
-  client->pos_buf = strlen(client->buffer);
+  client->pos_buf = printf_return;
   return 0;
 }
 
@@ -177,11 +166,11 @@ static int create_header(Client *client)
  * \param[out] cli_protocol Variavel que armazena qual o protocolo passado
  * pelo cliente
  *
- * \return READ_OK Caso ok
- * \return WRONG_READ Caso haja algum erro
+ * \return 0 Caso ok
+ * \return -1 Caso haja algum erro
  */
 static int verify_cli_protocol(char *protocol, 
-                               Known_protocols *cli_protocol)
+                               Http_protocols *cli_protocol)
 {
   int cont = 0;
   int cmp_return = 0;
@@ -191,7 +180,7 @@ static int verify_cli_protocol(char *protocol,
     cmp_return = strncmp(protocol, supported_protocols[cont],
                          strlen(supported_protocols[cont]));
     cont++;
-  } while (cont < protocols_num && cmp_return != 0);
+  } while (cont < NUM_PROTOCOL && cmp_return != 0);
 
   if (cmp_return != 0)
     return -1;
@@ -202,16 +191,16 @@ static int verify_cli_protocol(char *protocol,
   }
 }
 
-/*! \brief Funcao que analisa a requisicao do cliente e separa em tres strings,
- * o metodo, o recurso e o protocolo usados
+/*! \brief Funcao que analisa a requisicao do cliente e separa em tres 
+ * strings, o metodo, o recurso e o protocolo usados
  *
  * \param[out] client O cliente com todas as informacoes
  * \param[out] method O metodo da requisicao
  * \param[out] resource O recurso solicitado
  * \param[out] protocol O protocolo usado na requisicao
  *
- * \return READ_OK Caso ok
- * \return WRONG_READ Caso haja algum erro
+ * \return 0 Caso ok
+ * \return -1 Caso haja algum erro
  */
 static int extr_req_params(Client *client, char *method, 
                            char *resource, char *protocol)
@@ -222,10 +211,10 @@ static int extr_req_params(Client *client, char *method,
   memset(resource, 0, sizeof(*resource));
   memset(protocol, 0, sizeof(*protocol));
 
-  num_read = sscanf(client->buffer, "%" STR(METHOD_LEN) "[^ ] %"
-                    STR(RESOURCE_LEN) "[^ ] %" STR(PROTOCOL_LEN) 
-                    "[^\r\n]", method, resource, protocol);
-   
+  num_read = sscanf(client->buffer, "%" STR_METHOD_LEN "[^ ] "
+                    "%" STR_RESOURCE_LEN "[^ ] "
+                    "%" STR_PROTOCOL_LEN "[^\r\n]", 
+                    method, resource, protocol); 
   if (num_read != 3)
     return -1;
 
@@ -318,16 +307,14 @@ int make_connection(Server *server)
     return -1;
 
   for (i = 0; i < FD_SETSIZE; i++)
-    if (server->Client[i].sockfd < 0)
+    if (server->client[i].sockfd < 0)
     { 
-      server->Client[i].sockfd = connfd;
+      server->client[i].sockfd = connfd;
       break;
     }
 
   if (i == FD_SETSIZE)
     return -1;
-
-  //FD_SET(connfd, &server->sets.read_s);
  
   server->maxfd_number = MAX(connfd, server->maxfd_number);
   server->max_cli_index = MAX(i, server->max_cli_index);
@@ -361,12 +348,12 @@ void close_client_connection(Client *client)
 void init_server(Server *server)
 {
   int i = 0;
+
   memset(server, 0, sizeof(*server));
   server->max_cli_index = -1;
   server->maxfd_number = -1;
-  
   for (i = 0; i < FD_SETSIZE; i++)
-    server->Client[i].sockfd = -1;
+    server->client->sockfd = -1;
 }
 
 /*! \brief Inicializa os fd_sets e a referencia do maior descritor
@@ -385,13 +372,13 @@ void init_sets(Server *server)
 
   for (i = 0; i <= server->max_cli_index; i++)
   {
-    int cur_sock = server->Client[i].sockfd;
+    int cur_sock = server->client[i].sockfd;
     if (cur_sock < 0)
       continue;
 
     server->maxfd_number = MAX(cur_sock, server->maxfd_number);
 
-    if(server->Client[i].request_flag)
+    if(server->client[i].request_flag == 1)
       FD_SET(cur_sock, &server->sets.write_s);
     else
       FD_SET(cur_sock, &server->sets.read_s);
@@ -405,7 +392,8 @@ void init_sets(Server *server)
  *
  * \param[out] server A estrutura do servidor
  *
- * \return enum Read_status_ que lista os possiveis casos de erros
+ * \return -1 Caso erro
+ * \return 0 Caso ok
  *
  * \notes E' feito um calloc do buffer_in de server_Client
  */
@@ -458,51 +446,51 @@ int recv_client_msg (Client *client)
  * \param[out] client Contem informacoes a respeito do cliente
  * \param[in] serv_root Caminho do root do servidor
  *
- * \return READ_OK Caso leituras estejam ok
- * \return WRONG_READ Caso haja algum erro na leitura da request
+ * \return 0 Caso leitura ok
+ * \return -1 Caso haja algum erro na leitura
  */
 int verify_request(Client *client, char *serv_root)
 {
   char method[METHOD_LEN + 1];
   char resource[RESOURCE_LEN + 1];
   char protocol[PROTOCOL_LEN + 1];
-  Http_code code = 0;
 
   if (extr_req_params(client, method, resource, protocol) < 0)
   {
     client->resp_status = BAD_REQUEST;
-    return -1;
+    goto verify_request_error;
   }
   
   if (verify_cli_protocol(protocol, &client->protocol) < 0)
   {
     client->resp_status = BAD_REQUEST;
-    return -1;
+    goto verify_request_error;
   }
 
   if (verify_cli_method(method, &client->method) < 0)
   {
     client->resp_status = NOT_IMPLEMENTED;
-    return -1;
+    goto verify_request_error;
   }
 
-  if ((client->file = verify_cli_resource(resource, serv_root, &code))
-       == NULL)
-  {
-    client->resp_status = code;
-    return -1;
-  }
+  if ((client->resp_status = verify_cli_resource(resource, serv_root,
+       &client->file)) != OK)
+    goto verify_request_error;
 
   memset(client->buffer, 0, sizeof(*client->buffer));
   client->pos_buf = 0;
-  client->resp_status = OK;
   return 0;
+
+verify_request_error:
+  memset(client->buffer, 0, sizeof(*client->buffer));
+  client->pos_buf = 0;
+  return -1;
 }
 
 /*! \brief Funcao que gera a resposta ao cliente e armazena em um buffer
  *
- * \param[out] client Estrutura que contem o buffer e informacoes do cliente (o
- * buffer deve estar inicializado)
+ * \param[out] client Estrutura que contem o buffer e informacoes do cliente 
+ * (o buffer deve estar inicializado)
  *
  * \return 0 Caso OK
  * \return -1 Caso algum erro

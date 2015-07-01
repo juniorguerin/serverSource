@@ -4,6 +4,7 @@
  */
 
 #include "server.h"
+#include "token-bucket.h"
 
 int main(int argc, const char **argv)
 {
@@ -28,9 +29,11 @@ int main(int argc, const char **argv)
   
   while (1)
   {
+    int nready = 0;
+
     init_sets(&server);
 
-    int nready = select(server.maxfd_number + 1, &server.sets.read_s, 
+    nready = select(server.maxfd_number + 1, &server.sets.read_s, 
         &server.sets.write_s, &server.sets.except_s, NULL);
     if (nready == -1 && errno != EINTR)
     {
@@ -49,7 +52,7 @@ int main(int argc, const char **argv)
 
     for (i = 0; i <= server.max_cli_index; i++)
     {
-      Client *cur_client = &server.Client[i];
+      Client *cur_client = &server.client[i];
       if ((sockfd = cur_client->sockfd) < 0)
         continue;
 

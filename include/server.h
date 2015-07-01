@@ -26,6 +26,13 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#undef MAX
+#define MAX(a,b) ((a) > (b) ? (a) : (b))
+
+#undef STR
+#define STR_(x) #x
+#define STR(x) STR_(x)
+
 #define BUFFER_LEN BUFSIZ
 #define REQUEST_SIZE BUFSIZ
 #define LISTEN_BACKLOG 512
@@ -35,35 +42,30 @@
 #define PROTOCOL_LEN 9
 #define METHOD_LEN 5 
 #define RESOURCE_LEN 200
+#define STR_PROTOCOL_LEN STR(PROTOCOL_LEN)
+#define STR_METHOD_LEN STR(METHOD_LEN)
+#define STR_RESOURCE_LEN STR(RESOURCE_LEN)
 #define LIMIT_SEND 5
-#define HEADER_LEN 100
 
-#undef MAX
-#define MAX(a,b) ((a) > (b) ? (a) : (b))
-
-#undef STR
-#define STR_(x) #x
-#define STR(x) STR_(x)
-
-/* Informacoes sobre os metodos suportados */
-extern const int methods_num;
+/*! \brief Informacoes sobre os metodos suportados */
 extern const char *supported_methods[];
-typedef enum Known_methods_
+typedef enum Http_methods_
 {
   GET,
-  PUT
-} Known_methods;
+  PUT,
+  NUM_METHOD
+} Http_methods;
 
-/* Informacoes sobre os protocolos suportados */
+/*! \brief  Informacoes sobre os protocolos suportados */
 extern const char *supported_protocols[];
-extern const int protocols_num;
-typedef enum Known_protocols_
+typedef enum Http_protocols_
 {
   HTTP10,
-  HTTP11
-} Known_protocols;
+  HTTP11,
+  NUM_PROTOCOL
+} Http_protocols;
 
-/* Os codigos http */
+/*! \brief Os codigos http */
 typedef enum Http_code_
 {
   OK = 200,
@@ -73,7 +75,7 @@ typedef enum Http_code_
   NOT_IMPLEMENTED = 501
 } Http_code;
 
-/* Guarda informacoes sobre os clientes conectados */
+/*! \brief Guarda informacoes sobre os clientes conectados */
 typedef struct Client_ 
 {
   int sockfd; /*!< Socket de conexao */
@@ -81,14 +83,14 @@ typedef struct Client_
   int pos_buf; /*!< Posicao da escrita no buffer */
   int request_flag; /*!< Status da comunicacao com o servidor */
   int nonblock_write; /*!< Status de leitura non-blocking */
-  Known_methods method; /*!< Metodo usado na request */
-  Known_protocols protocol; /*!< Protocolo usado na request */
+  Http_methods method; /*!< Metodo usado na request */
+  Http_protocols protocol; /*!< Protocolo usado na request */
   Http_code resp_status; /*!< Codigo para a resposta ao cliente */
   FILE *file; /*!< Arquivo para o recurso solicitado */
 
 } Client;
 
-/* Guarda as variaveis do tipo fd_set vinculadas ao servidor */
+/*! \brief Guarda as variaveis do tipo fd_set vinculadas ao servidor */
 typedef struct Server_fd_sets_ 
 {
   fd_set write_s; /*!< fd_set de escrita */
@@ -96,10 +98,10 @@ typedef struct Server_fd_sets_
   fd_set except_s; /*!< fd_set de excecao */
 } Server_fd_sets;
 
-/* Informacoes a respeito do estado atual do servidor */
+/*! \brief Informacoes a respeito do estado atual do servidor */
 typedef struct Server_ 
 {
-  Client Client[FD_SETSIZE]; /*!< Estrutura de clientes conectados */
+  Client client[FD_SETSIZE]; /*!< Estrutura de clientes conectados */
   int max_cli_index; /*!< Maior indice utilizado na estrutura de clientes */
   Server_fd_sets sets; /*!< Os fd_sets */
   long listen_port; /*!< A porta de escuta do servidor */
@@ -114,7 +116,7 @@ int create_listen_socket(const Server *server, int listen_backlog);
 
 int make_connection(Server *server);
 
-void close_client_connection(Client *Client);
+void close_client_connection(Client *client);
 
 void init_server(Server *server);
 
