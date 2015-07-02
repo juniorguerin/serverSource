@@ -24,7 +24,6 @@
 
 #define HOST_LEN 128
 #define PORT_LEN 8
-#define PATH_LEN 512
 #define BUFFER_LEN 2048 
 #define MESSAGE_LEN 512
 #define FLAG_WRITE "-f"
@@ -38,7 +37,7 @@
 struct parsed_url
 {
   char host[HOST_LEN];   /*!< Host da URL */
-  char path[PATH_LEN];   /*!< Path da URL */
+  char path[PATH_MAX];   /*!< Path da URL */
   char file_name[PATH_MAX];   /*!< Nome do arquivo */
   char port[PORT_LEN];   /*!< Numero da porta para conexao */
 };

@@ -47,89 +47,90 @@
 #define STR_RESOURCE_LEN STR(RESOURCE_LEN)
 #define LIMIT_SEND 5
 
-/*! \brief Informacoes sobre os metodos suportados */
+#define PENDING_DATA 0x01
+#define REQUEST_READ 0x02
+
 extern const char *supported_methods[];
-typedef enum Http_methods_
+typedef enum http_methods_
 {
   GET,
   PUT,
   NUM_METHOD
-} Http_methods;
+} http_methods;
 
-/*! \brief  Informacoes sobre os protocolos suportados */
 extern const char *supported_protocols[];
-typedef enum Http_protocols_
+typedef enum http_protocols_
 {
   HTTP10,
   HTTP11,
   NUM_PROTOCOL
-} Http_protocols;
+} http_protocols;
 
-/*! \brief Os codigos http */
-typedef enum Http_code_
+typedef enum http_code_
 {
   OK = 200,
   BAD_REQUEST = 400,
   FORBIDDEN = 403,
   NOT_FOUND = 404,
   NOT_IMPLEMENTED = 501
-} Http_code;
+} http_code;
 
 /*! \brief Guarda informacoes sobre os clientes conectados */
-typedef struct Client_ 
+typedef struct client_ 
 {
   int sockfd; /*!< Socket de conexao */
   char *buffer; /*!< Buffer do cliente */
   int pos_buf; /*!< Posicao da escrita no buffer */
+  unsigned char flags;
   int request_flag; /*!< Status da comunicacao com o servidor */
   int nonblock_write; /*!< Status de leitura non-blocking */
-  Http_methods method; /*!< Metodo usado na request */
-  Http_protocols protocol; /*!< Protocolo usado na request */
-  Http_code resp_status; /*!< Codigo para a resposta ao cliente */
+  http_methods method; /*!< Metodo usado na request */
+  http_protocols protocol; /*!< Protocolo usado na request */
+  http_code resp_status; /*!< Codigo para a resposta ao cliente */
   FILE *file; /*!< Arquivo para o recurso solicitado */
 
-} Client;
+} client;
 
 /*! \brief Guarda as variaveis do tipo fd_set vinculadas ao servidor */
-typedef struct Server_fd_sets_ 
+typedef struct server_fd_sets_ 
 {
   fd_set write_s; /*!< fd_set de escrita */
   fd_set read_s; /*!< fd_set de leitura */
   fd_set except_s; /*!< fd_set de excecao */
-} Server_fd_sets;
+} server_fd_sets;
 
 /*! \brief Informacoes a respeito do estado atual do servidor */
-typedef struct Server_ 
+typedef struct server_ 
 {
-  Client client[FD_SETSIZE]; /*!< Estrutura de clientes conectados */
+  client client_list; /*!< Estrutura de clientes conectados */
   int max_cli_index; /*!< Maior indice utilizado na estrutura de clientes */
-  Server_fd_sets sets; /*!< Os fd_sets */
+  server_fd_sets sets; /*!< Os fd_sets */
   long listen_port; /*!< A porta de escuta do servidor */
   int listenfd; /*!< O socket de escuta */
   int maxfd_number; /*!< O maior descritor a observar */
   char serv_root[ROOT_LEN]; /*!< O endereco do root do servidor */
-} Server;
+} server;
 
-int analyse_arguments(int argc, const char *argv[], Server *server);
+int analyse_arguments(int argc, const char *argv[], server *r_server);
 
-int create_listen_socket(const Server *server, int listen_backlog);
+int create_listen_socket(const server *r_server, int listen_backlog);
 
-int make_connection(Server *server);
+int make_connection(server *r_server);
 
-void close_client_connection(Client *client);
+void close_client_connection(client *c_client);
 
-void init_server(Server *server);
+void init_server(server *r_server);
 
-void init_sets(Server *server);
+void init_sets(server *r_server);
 
-int read_client_input(Client *client);
+int read_client_input(client *cur_client);
 
-int recv_client_msg (Client *client);
+int recv_client_msg (client *cur_client);
 
-int verify_request(Client *client, char *serv_root);
+int verify_request(client *cur_client, char *serv_root);
 
-int build_response(Client *client);
+int build_response(client *cur_client);
 
-int send_response(Client *client);
+int send_response(client *cur_client);
 
 #endif

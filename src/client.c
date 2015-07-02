@@ -77,7 +77,7 @@ int get_url_info(const char *url, struct parsed_url *url_info,
 
   length = strlen(begin_url);
   /* verifica se excedeu o tamanho da variavel */
-  if (length >= PATH_LEN)
+  if (length >= PATH_MAX)
     goto get_url_error;
   strncpy(url_info->path, begin_url, length);
   

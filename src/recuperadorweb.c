@@ -79,10 +79,19 @@ int main(int argc, const char *argv[])
     goto error;
   }
 
-  fwrite(header + begin_file, sizeof(char), total_bytes - begin_file, file);
+  if (fwrite(header + begin_file, sizeof(char), total_bytes - begin_file,
+      file) < (unsigned) total_bytes - begin_file)
+  {
+    fprintf(stderr, "fwrite\n");
+    goto error;
+  }
 
   while ((bytes_num = recv(sockfd, buffer, BUFFER_LEN, 0)) > 0)
-    fwrite(buffer, sizeof(char), bytes_num, file);
+    if (fwrite(buffer, sizeof(char), bytes_num, file) < (unsigned) bytes_num)
+    {
+      fprintf(stderr, "fwrite\n");
+      goto error;
+    }
 
   if (close(sockfd))
     fprintf(stderr, "close socket\n");

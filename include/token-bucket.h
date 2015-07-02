@@ -27,6 +27,6 @@ void bucket_set(const unsigned int velocity, const unsigned int burst,
 int bucket_withdraw(const unsigned int remove_tokens,
                           Token_bucket *bucket);
 
-int buckets_get_time(Client *clients);
+int buckets_get_time(client *cur_clients);
 
 #endif
