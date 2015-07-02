@@ -426,8 +426,8 @@ int read_client_input(Client *client)
   return 0; 
 }
 
-/*! \brief Verifica entrada de dados do client e determina quando a mensagem
- * chegou ao fim
+/*! \brief Verifica entrada de dados do client e determina quando a 
+ *  mensagem chegou ao fim
  *
  * \param[out] client A estrutura de Client
  */
