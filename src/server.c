@@ -210,7 +210,7 @@ static void extr_req_params(client_node *cur_client, char *method,
  * \return NULL caso haja erro de alocacao
  * \return client caso o cliente seja alocado
  */
-static client_node *allocate_new_client(int sockfd)
+client_node *allocate_client_node(int sockfd)
 {
   client_node *new_client = NULL;
 
@@ -224,58 +224,51 @@ static client_node *allocate_new_client(int sockfd)
 
 /*! \brief Libera um elemento da struct de cliente
  *
- * \param[out] client_remove o cliente a ser removido
+ * \param[out] client o cliente a ser removido
  */
-static void free_client_node (client_node *client_remove)
+void free_client_node(client_node *client)
 {
-  close(client_remove->sockfd);
-  if (client_remove->buffer)
-    free(client_remove->buffer);
-  if (client_remove->file)
-    fclose(client_remove->file);
-  free(client_remove);
+  close(client->sockfd);
+  if (client->buffer)
+    free(client->buffer);
+  if (client->file)
+    fclose(client->file);
+  free(client);
 }
 
-/*! \brief Adiciona um cliente a lista de clientes
+/*! \brief Adiciona um cliente no final da lista de clientes
  *
- * \param[in] sockfd O socket do novo cliente
+ * \param[in] client O cliente a ser adicionado
  * \param[out] cli_list O primeiro elemento da lista
  */
-int add_client_to_list(const int sockfd, client_list *list_of_clients)
+void append_client(client_node *client, client_list *list_of_clients)
 {
   client_node *last_client = NULL;
-  client_node *new_client = NULL;
-
-  new_client = allocate_new_client(sockfd);
-  if (!new_client)
-    return -1;
 
   if (!list_of_clients->head)
   {
-    list_of_clients->head = new_client;
+    list_of_clients->head = client;
     list_of_clients->size++;
-    return 0;
   }
-
-  for (last_client = list_of_clients->head; last_client->next; 
-       last_client = last_client->next)
-    ;
-  last_client->next = new_client;
-  list_of_clients->size++;
-
-  return 0;
+  else
+  {
+    for (last_client = list_of_clients->head; last_client->next; 
+         last_client = last_client->next)
+      ;
+    last_client->next = client;
+    list_of_clients->size++;
+  }
 }
 
-/*! \brief Elimina a referencia de um elemento dentro da lsita
+/*! \brief Elimina referencia de um elemento dentro da lsita
  *
  * \param[in] sockfd O socket do cliente a ser removido
  * \param[out] list_of_clients A lista de clientes
  *
- * \return -1 Caso nao consiga encontrar o elemento
+ * \return -1 Caso ocorra algum erro
  * \return 0 Caso ok
  */
-int remove_client_from_list(const int sockfd, 
-                            client_list *list_of_clients)
+int pop_client(int sockfd, client_list *list_of_clients)
 {
   client_node *client_before = NULL;
   client_node *client_remove = NULL;
@@ -296,7 +289,6 @@ int remove_client_from_list(const int sockfd,
   else
     client_before->next = client_remove->next;
   
-  free_client_node(client_remove);
   list_of_clients->size--;
 
   return 0;
@@ -388,41 +380,55 @@ int make_connection(server *r_server)
   int connfd = -1;
   struct sockaddr_in cliaddr;
   socklen_t cli_length = sizeof(cliaddr);
-  
-  if (r_server->list_of_clients.size == FD_SETSIZE)
+  client_node *new_client = NULL;
+ 
+  /* FD_SETSIZE e o limite de descritores para o select */
+  if (FD_SETSIZE == r_server->list_of_clients.size)
     return -1;
 
   connfd = accept(r_server->listenfd, (struct sockaddr *) &cliaddr, 
                   &cli_length); 
-  if (connfd < 0)
+  if (0 > connfd)
     return -1;
 
-  if (add_client_to_list(connfd, &r_server->list_of_clients) < 0)
+  if (!(new_client = allocate_client_node(connfd)))
   {
     close(connfd);
     return -1;
   }
 
+  append_client(new_client, &r_server->list_of_clients);
   r_server->maxfd_number = MAX(connfd, r_server->maxfd_number);
 
   return 0;
 }
 
-/*! \brief Fecha a conexao com um cliente 
+/*! \brief Remove um cliente da lista (fecha a conexao) 
  *
- * \param[in] client Endereco do cliente atual da lista
- * \param[out] list_of_clients Lista de clientes 
+ * \param[out] cur_cli Endereco do cliente atual da lista
+ * \param[out] list_of_clients Lista de clientes
+ *
+ * \return -1 Caso haja erro
+ * \return 0 Caso OK
+ *
+ * \note Avança ao proximo cliente com o primeiro parametro
  */
-int close_client_connection(client_node **client, client_list
-                            *list_of_clients) 
+int remove_client(client_node **cur_client, 
+                  client_list *list_of_clients) 
 {
-  int sockfd = (*client)->sockfd;
+  int sockfd;
+  client_node *client_remove = NULL;
+  
+  sockfd = (*cur_client)->sockfd;
 
-  /* move a lista para nao perder a referencia */
-  *client = (*client)->next;
+  /* Passa ao proximo para nao perder a referencia */
+  client_remove = *cur_client;
+  *cur_client = (*cur_client)->next;
 
-  if (remove_client_from_list(sockfd, list_of_clients) < 0)
+  if(0 > pop_client(sockfd, list_of_clients))
     return -1;
+  
+  free_client_node(client_remove);
 
   return 0;
 }
@@ -482,22 +488,22 @@ int read_client_input(client_node *cur_client)
 {
   int n_bytes = 0;
 
-  if (cur_client->buffer == NULL)
+  if (!cur_client->buffer)
   {
     cur_client->buffer = (char *) calloc(BUFFER_LEN, sizeof(char));
-    if (cur_client->buffer == NULL)
+    if (!cur_client->buffer)
       return -1;
   }
    
-  if (cur_client->pos_buf == BUFFER_LEN - 1)
+  if (BUFFER_LEN - 1 == cur_client->pos_buf)
     return -1;
 
-  if ((n_bytes = recv(cur_client->sockfd, cur_client->buffer +
+  if (0 > (n_bytes = recv(cur_client->sockfd, cur_client->buffer +
                       cur_client->pos_buf,
                       BUFFER_LEN - cur_client->pos_buf - 1,
-                      MSG_DONTWAIT)) < 0)
+                      MSG_DONTWAIT)))
   {  
-    if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+    if (EINTR == errno || EAGAIN == errno || EWOULDBLOCK == errno)
       return 0;
     
     return -1;
@@ -514,10 +520,10 @@ int read_client_input(client_node *cur_client)
  */
 int recv_client_msg (client_node *cur_client)
 { 
-  if (read_client_input(cur_client) < 0)
+  if (0 > read_client_input(cur_client))
     return -1;
 
-  if (verify_double_line(cur_client->buffer) == 0)
+  if (!verify_double_line(cur_client->buffer))
     cur_client->flags = cur_client->flags & (~REQUEST_READ);
   else
     cur_client->flags = cur_client->flags | REQUEST_READ;
@@ -566,18 +572,18 @@ int build_response(client_node *cur_client)
 
   if (!cur_client->pos_buf)
   {
-    if (create_header(cur_client) < 0)
+    if (0 > create_header(cur_client))
       return -1;
   }
   else
     cur_client->pos_buf = 0;
 
-  if (cur_client->resp_status == OK)
+  if (OK == cur_client->resp_status)
   {
     bytes_read = fread(cur_client->buffer + cur_client->pos_buf, 
                        sizeof(char), BUFFER_LEN - cur_client->pos_buf, 
                        cur_client->file);
-    if (bytes_read == 0 || ferror(cur_client->file) != 0)
+    if (0 == bytes_read || 0 != ferror(cur_client->file))
       return -1;
   }
 
@@ -603,8 +609,7 @@ int send_response(client_node *cur_client)
   if((sent_bytes = send(cur_client->sockfd, cur_client->buffer, 
                         cur_client->pos_buf, MSG_DONTWAIT)) < 0)
   {
-    if (errno == EINTR || errno == EAGAIN || errno ==
-    EWOULDBLOCK)
+    if (EINTR == errno || EAGAIN == errno || EWOULDBLOCK == errno)
     {
       cur_client->flags = cur_client->flags | PENDING_DATA;
       return 0;

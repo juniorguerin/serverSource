@@ -34,7 +34,7 @@ int main(int argc, const char **argv)
         &r_server.sets.read_s, &r_server.sets.write_s, 
         &r_server.sets.except_s, NULL)))
     {
-      if (errno == EINTR)
+      if (EINTR == errno)
         continue;
      
       close(r_server.listenfd);
@@ -46,7 +46,7 @@ int main(int argc, const char **argv)
       if (0 > make_connection(&r_server))
         continue;
 
-      if (--nready <= 0)
+      if (0 >= --nready)
         continue;
     }
 
@@ -61,8 +61,7 @@ int main(int argc, const char **argv)
       {
         if (0 > recv_client_msg(cur_client))
         {
-          close_client_connection(&cur_client, 
-                                  &r_server.list_of_clients);
+          remove_client(&cur_client, &r_server.list_of_clients);
           continue;
         }
 
@@ -78,23 +77,20 @@ int main(int argc, const char **argv)
         if (0 != build_response(cur_client) || 
             0 != send_response(cur_client))
         {
-          close_client_connection(&cur_client,
-                                  &r_server.list_of_clients);
+          remove_client(&cur_client, &r_server.list_of_clients);
           continue;
         }
 
         if (!(cur_client->flags & REQUEST_READ))
         {
-          close_client_connection(&cur_client,
-                                  &r_server.list_of_clients);
+          remove_client(&cur_client, &r_server.list_of_clients);
           continue;
         }
       }
 
       if (FD_ISSET(sockfd, &r_server.sets.except_s))
       {
-          close_client_connection(&cur_client,
-                                  &r_server.list_of_clients);
+          remove_client(&cur_client, &r_server.list_of_clients);
           continue;
       }
 

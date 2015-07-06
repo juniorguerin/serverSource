@@ -4,7 +4,7 @@
 CC = clang
 
 # Variavel de opcoes de compilacao e bibliotecas estaticas
-CFLAGS = -Werror -Wall -Wextra -g 
+CFLAGS = -Werror -Wall -Wextra -pedantic -g 
 
 # Variaveis de paths
 INCLUDE = ./include
@@ -13,13 +13,13 @@ VPATH = ./src
 
 .PHONY: clean all
 
-REC_WEB_FILES = $(addprefix $(OBJ)/, client.o recuperadorweb.o)
+REC_WEB_FILES = $(addprefix $(OBJ)/, client.o clienteweb.o)
 SERV_FILES = $(addprefix $(OBJ)/, server.o servidorweb.o)
 
-all: recuperadorweb servidorweb
+all: clienteweb servidorweb 
 
-recuperadorweb: $(REC_WEB_FILES)
-	$(CC) $^ -o recuperadorweb
+clienteweb: $(REC_WEB_FILES)
+	$(CC) $^ -o clienteweb
 
 servidorweb: $(SERV_FILES)
 	$(CC) $^ -o servidorweb
@@ -29,4 +29,4 @@ $(OBJ)/%.o: %.c
 	$(CC) $(CFLAGS) -I$(INCLUDE) -c $^ -o $@
 
 clean:
-	rm -f $(OBJ)/*.o recuperadorweb servidorweb
+	rm -f $(OBJ)/*.o clienteweb servidorweb

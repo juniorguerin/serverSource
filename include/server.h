@@ -96,11 +96,19 @@ typedef struct client_list_
   int size; /*!< Tamanho da lista atual */
 } client_list; 
 
-int add_client_to_list(const int sockfd, client_list *list_of_clients);
+void append_client(client_node *client, client_list *list_of_clients);
 
-int remove_client_from_list(const int sockfd, client_list *list_of_clients);
+int pop_client(int sockfd, client_list *list_of_clients);
 
-/*! \brief Guarda as variaveis do tipo fd_set vinculadas ao servidor */
+client_node *allocate_client_node(int sockfd);
+
+void free_client_node(client_node *client);
+
+int remove_client(client_node **client, 
+                  client_list *list_of_clients); 
+
+/*! \brief Guarda as variaveis do tipo fd_set vinculadas ao servidor
+ */
 typedef struct server_fd_sets_ 
 {
   fd_set write_s; /*!< fd_set de escrita */
@@ -124,9 +132,6 @@ int analyse_arguments(int argc, const char *argv[], server *r_server);
 int create_listen_socket(const server *r_server, int listen_backlog);
 
 int make_connection(server *r_server);
-
-int close_client_connection(client_node **client, 
-                            client_list *list_of_clients); 
 
 void init_server(server *r_server);
 
