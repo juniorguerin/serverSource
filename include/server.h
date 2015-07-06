@@ -125,7 +125,7 @@ int create_listen_socket(const server *r_server, int listen_backlog);
 
 int make_connection(server *r_server);
 
-int close_client_connection(const int sockfd, 
+int close_client_connection(client_node **client, 
                             client_list *list_of_clients); 
 
 void init_server(server *r_server);
@@ -136,7 +136,7 @@ int read_client_input(client_node *cur_client);
 
 int recv_client_msg (client_node *cur_client);
 
-int verify_request(client_node *cur_client, char *serv_root);
+void verify_request(char *serv_root, client_node *cur_client);
 
 int build_response(client_node *cur_client);
 

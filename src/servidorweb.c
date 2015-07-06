@@ -30,8 +30,9 @@ int main(int argc, const char **argv)
     
     init_sets(&r_server);
 
-    if (0 > (nready = select(r_server.maxfd_number + 1, &r_server.sets.read_s, 
-        &r_server.sets.write_s, &r_server.sets.except_s, NULL)))
+    if (0 > (nready = select(r_server.maxfd_number + 1, 
+        &r_server.sets.read_s, &r_server.sets.write_s, 
+        &r_server.sets.except_s, NULL)))
     {
       if (errno == EINTR)
         continue;
@@ -60,7 +61,8 @@ int main(int argc, const char **argv)
       {
         if (0 > recv_client_msg(cur_client))
         {
-          close_client_connection(&cur_client, &r_server.list_of_clients);
+          close_client_connection(&cur_client, 
+                                  &r_server.list_of_clients);
           continue;
         }
 
@@ -76,20 +78,23 @@ int main(int argc, const char **argv)
         if (0 != build_response(cur_client) || 
             0 != send_response(cur_client))
         {
-          close_client_connection(&cur_client, &r_server.list_of_clients);
+          close_client_connection(&cur_client,
+                                  &r_server.list_of_clients);
           continue;
         }
 
         if (!(cur_client->flags & REQUEST_READ))
         {
-          close_client_connection(&cur_client, &r_server.list_of_clients);
+          close_client_connection(&cur_client,
+                                  &r_server.list_of_clients);
           continue;
         }
       }
 
       if (FD_ISSET(sockfd, &r_server.sets.except_s))
       {
-          close_client_connection(&cur_client, &r_server.list_of_clients);
+          close_client_connection(&cur_client,
+                                  &r_server.list_of_clients);
           continue;
       }
 
