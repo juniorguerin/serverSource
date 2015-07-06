@@ -93,23 +93,22 @@ int main(int argc, const char *argv[])
       goto error;
     }
 
-  if (close(sockfd))
-    fprintf(stderr, "close socket\n");
+  if (sockfd > 0)
+    close(sockfd);
 
-  if (fclose(file))
-    fprintf(stderr, "close file\n");
+  if (file)
+    fclose(file);
   
   return 0;
 
 error:
-  if (remove(url_info.file_name) != 0)
-    fprintf(stderr, "remove");
+  remove(url_info.file_name);
 
-  if (close(sockfd))
-    fprintf(stderr, "close socket\n");
+  if (sockfd > 0)
+    close(sockfd);
 
-  if (fclose(file))
-    fprintf(stderr, "close file\n");
+  if (file)
+    fclose(file);
 
   return -1;
 }

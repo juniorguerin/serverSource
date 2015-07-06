@@ -4,3 +4,5 @@
 recuperadorweb
 servidorweb
 server_files/*
+cscope*
+tags

@@ -75,21 +75,30 @@ typedef enum http_code_
   NOT_IMPLEMENTED = 501
 } http_code;
 
-/*! \brief Guarda informacoes sobre os clientes conectados */
-typedef struct client_ 
+/*! \brief Um no' para a lista de clientes  */
+typedef struct client_node_ 
 {
   int sockfd; /*!< Socket de conexao */
   char *buffer; /*!< Buffer do cliente */
   int pos_buf; /*!< Posicao da escrita no buffer */
-  unsigned char flags;
-  int request_flag; /*!< Status da comunicacao com o servidor */
-  int nonblock_write; /*!< Status de leitura non-blocking */
+  unsigned char flags; /*!< Flags para o estado do cliente */
   http_methods method; /*!< Metodo usado na request */
   http_protocols protocol; /*!< Protocolo usado na request */
   http_code resp_status; /*!< Codigo para a resposta ao cliente */
   FILE *file; /*!< Arquivo para o recurso solicitado */
+  struct client_node_ *next; /*!< Proximo no' */
+} client_node;
 
-} client;
+/*! \brief Lista de clients  */
+typedef struct client_list_
+{
+  client_node *head; /*!< Primeiro elemento da lista */
+  int size; /*!< Tamanho da lista atual */
+} client_list; 
+
+int add_client_to_list(const int sockfd, client_list *list_of_clients);
+
+int remove_client_from_list(const int sockfd, client_list *list_of_clients);
 
 /*! \brief Guarda as variaveis do tipo fd_set vinculadas ao servidor */
 typedef struct server_fd_sets_ 
@@ -102,8 +111,7 @@ typedef struct server_fd_sets_
 /*! \brief Informacoes a respeito do estado atual do servidor */
 typedef struct server_ 
 {
-  client client_list; /*!< Estrutura de clientes conectados */
-  int max_cli_index; /*!< Maior indice utilizado na estrutura de clientes */
+  client_list list_of_clients; /*!< Lista de clientes conectados */
   server_fd_sets sets; /*!< Os fd_sets */
   long listen_port; /*!< A porta de escuta do servidor */
   int listenfd; /*!< O socket de escuta */
@@ -117,20 +125,21 @@ int create_listen_socket(const server *r_server, int listen_backlog);
 
 int make_connection(server *r_server);
 
-void close_client_connection(client *c_client);
+int close_client_connection(const int sockfd, 
+                            client_list *list_of_clients); 
 
 void init_server(server *r_server);
 
 void init_sets(server *r_server);
 
-int read_client_input(client *cur_client);
+int read_client_input(client_node *cur_client);
 
-int recv_client_msg (client *cur_client);
+int recv_client_msg (client_node *cur_client);
 
-int verify_request(client *cur_client, char *serv_root);
+int verify_request(client_node *cur_client, char *serv_root);
 
-int build_response(client *cur_client);
+int build_response(client_node *cur_client);
 
-int send_response(client *cur_client);
+int send_response(client_node *cur_client);
 
 #endif

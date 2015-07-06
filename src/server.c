@@ -26,14 +26,10 @@ static int verify_double_line(const char *buffer)
 /*! \brief Verifica o metodo passado na requisicao do Cliente
  *
  * \param[in] method_str O metodo extraido a partir da requisicao do cliente
- * \param[out] cli_method Variavel que armazena qual o metodo passado pelo
- * cliente
- *
- * \return 0 Caso ok
- * \return -1 Caso haja algum erro na leitura
+ * \param[out] cur_client O cliente em questao 
  */
-static int verify_cli_method(const char *method_str, 
-                             http_methods *cli_method)
+static void verify_cli_method(const char *method_str, 
+                             client_node *cur_client)
 {
   int cont = 0;
   int cmp_return = 0;
@@ -46,10 +42,9 @@ static int verify_cli_method(const char *method_str,
   } while (cont < NUM_METHOD && cmp_return != 0);
 
   if (cmp_return != 0)
-    return -1;
-  
-  *cli_method = cont - 1;
-  return 0;
+    cur_client->resp_status = NOT_IMPLEMENTED;
+  else
+    cur_client->method = cont - 1;
 }
 
 /*! \brief Funcao que verifica o recurso que o cliente esta querendo acessar
@@ -57,12 +52,13 @@ static int verify_cli_method(const char *method_str,
  * \param[in] resource String extraida da requisicao do cliente
  * correspondente ao recurso
  * \param[in] serv_root Path do root do servidor
- * \param[out] code Variavel que armazena o codigo http da resposta do cliente
+ * \param[out] cur_client O cliente em questao
  *
- * \return Htpp_code da mensagem do cliente
+ * \return 0 Caso a analise chegue ao fim
+ * \return -1 Caso se encaixe em algum dos casos de erro
  */
-static http_code verify_cli_resource(const char *resource, 
-                                     char *serv_root, FILE **file)
+static int  verify_cli_resource(const char *resource, char *serv_root, 
+                                client_node *cur_client)
 {
   char full_path[PATH_MAX];
   char rel_path[PATH_MAX];
@@ -71,18 +67,28 @@ static http_code verify_cli_resource(const char *resource,
   memset(rel_path, 0, sizeof(rel_path));
 
   if (strstr(resource, "../") != NULL)
-    return FORBIDDEN;
+  {
+    cur_client->resp_status = FORBIDDEN;
+    return -1;
+  }
 
   strncpy(rel_path, serv_root, ROOT_LEN - 1);
   strncat(rel_path, resource, PATH_MAX - ROOT_LEN - 1);
   if (!realpath(rel_path, full_path))
-    return FORBIDDEN;
+  {
+    cur_client->resp_status = NOT_FOUND;
+    return -1;
+  }
 
-  *file = fopen(full_path, "r");
-  if (!*file)
-    return NOT_FOUND;
+  cur_client->file = fopen(full_path, "r");
+  if (!cur_client->file)
+  {
+    cur_client->resp_status = NOT_FOUND;
+    return -1;
+  }
 
-  return OK;
+  cur_client->resp_status = OK;
+  return 0;
 }
 
 /*! \brief Funcao que analisa um codigo http e retorna a string do status
@@ -128,7 +134,7 @@ static char *http_code_char(const http_code http_code)
  * \return 0 Caso ok
  * \return -1 Caso haja algum erro
  */
-static int create_header(client *cur_client)
+static int create_header(client_node *cur_client)
 {
   int resp_status = 0;
   int printf_return = 0;
@@ -150,14 +156,10 @@ static int create_header(client *cur_client)
 /*! \brief Verifica qual o protocolo da request do cliente
  *
  * \param[in] protocol O protocolo extraido da request do cliente
- * \param[out] cli_protocol Variavel que armazena qual o protocolo passado
- * pelo cliente
- *
- * \return 0 Caso ok
- * \return -1 Caso haja algum erro
+ * \param[out] cur_client O cliente em questao
  */
-static int verify_cli_protocol(char *protocol, 
-                               http_protocols *cli_protocol)
+static void verify_cli_protocol(const char *protocol, 
+                               client_node *cur_client)
 {
   int cont = 0;
   int cmp_return = 0;
@@ -170,10 +172,9 @@ static int verify_cli_protocol(char *protocol,
   } while (cont < NUM_PROTOCOL && cmp_return != 0);
 
   if (cmp_return != 0)
-    return -1;
-
-  *cli_protocol = cont - 1;
-  return 0;
+    cur_client->resp_status = BAD_REQUEST;
+  else
+    cur_client->protocol = cont - 1;
 }
 
 /*! \brief Funcao que analisa a requisicao do cliente e separa em tres 
@@ -183,11 +184,8 @@ static int verify_cli_protocol(char *protocol,
  * \param[out] method O metodo da requisicao
  * \param[out] resource O recurso solicitado
  * \param[out] protocol O protocolo usado na requisicao
- *
- * \return 0 Caso ok
- * \return -1 Caso haja algum erro
  */
-static int extr_req_params(client *cur_client, char *method, 
+static void extr_req_params(client_node *cur_client, char *method, 
                            char *resource, char *protocol)
 {
   int num_read = 0;
@@ -200,8 +198,106 @@ static int extr_req_params(client *cur_client, char *method,
                     "%" STR_RESOURCE_LEN "[^ ] "
                     "%" STR_PROTOCOL_LEN "[^\r\n]", 
                     method, resource, protocol); 
+  
   if (num_read != 3)
+    cur_client->resp_status = BAD_REQUEST;
+}
+
+/*! \brief Aloca um novo elemento da estrutura de clientes
+ * 
+ * \param[in] sockfd O socket para o cliente
+ *
+ * \return NULL caso haja erro de alocacao
+ * \return client caso o cliente seja alocado
+ */
+static client_node *allocate_new_client(int sockfd)
+{
+  client_node *new_client = NULL;
+
+  new_client = (client_node *) calloc(1, sizeof(client_node));
+  if (!new_client)
+    return NULL;
+
+  new_client->sockfd = sockfd;
+  return new_client;
+}
+
+/*! \brief Libera um elemento da struct de cliente
+ *
+ * \param[out] client_remove o cliente a ser removido
+ */
+static void free_client_node (client_node *client_remove)
+{
+  close(client_remove->sockfd);
+  if (client_remove->buffer)
+    free(client_remove->buffer);
+  if (client_remove->file)
+    fclose(client_remove->file);
+  free(client_remove);
+}
+
+/*! \brief Adiciona um cliente a lista de clientes
+ *
+ * \param[in] sockfd O socket do novo cliente
+ * \param[out] cli_list O primeiro elemento da lista
+ */
+int add_client_to_list(const int sockfd, client_list *list_of_clients)
+{
+  client_node *last_client = NULL;
+  client_node *new_client = NULL;
+
+  new_client = allocate_new_client(sockfd);
+  if (!new_client)
     return -1;
+
+  if (!list_of_clients->head)
+  {
+    list_of_clients->head = new_client;
+    list_of_clients->size++;
+    return 0;
+  }
+
+  for (last_client = list_of_clients->head; last_client->next; 
+       last_client = last_client->next)
+    ;
+  last_client->next = new_client;
+  list_of_clients->size++;
+
+  return 0;
+}
+
+/*! \brief Elimina a referencia de um elemento dentro da lsita
+ *
+ * \param[in] sockfd O socket do cliente a ser removido
+ * \param[out] list_of_clients A lista de clientes
+ *
+ * \return -1 Caso nao consiga encontrar o elemento
+ * \return 0 Caso ok
+ */
+int remove_client_from_list(const int sockfd, 
+                            client_list *list_of_clients)
+{
+  client_node *client_before = NULL;
+  client_node *client_remove = NULL;
+
+  if (0 >= list_of_clients->size)
+    return -1;
+
+  for(client_remove = list_of_clients->head; 
+      sockfd != client_remove->sockfd && client_remove->next;  
+      client_before = client_remove, client_remove = client_remove->next)
+    ;
+
+  if (!client_remove)
+    return -1;
+
+  if (client_remove == list_of_clients->head)
+    list_of_clients->head = client_remove->next;
+  else
+    client_before->next = client_remove->next;
+  
+  free_client_node(client_remove);
+  list_of_clients->size--;
 
   return 0;
 }
@@ -252,7 +348,7 @@ int create_listen_socket(const server *r_server, int listen_backlog)
 {
   struct sockaddr_in servaddr;
   int listen_socket;
-  int yes = 1;
+  int enabled = 1;
 
   listen_socket = socket(AF_INET, SOCK_STREAM, 0);
   if (listen_socket < 0)
@@ -263,7 +359,7 @@ int create_listen_socket(const server *r_server, int listen_backlog)
   servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
   servaddr.sin_port = htons(r_server->listen_port);
 
-  setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &yes,
+  setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &enabled,
              sizeof(int));
   
   if (bind(listen_socket, (struct sockaddr *)&servaddr,
@@ -289,66 +385,57 @@ error:
  */
 int make_connection(server *r_server)
 {
-  int connfd = -1, i = 0;
+  int connfd = -1;
   struct sockaddr_in cliaddr;
   socklen_t cli_length = sizeof(cliaddr);
+  
+  if (r_server->list_of_clients.size == FD_SETSIZE)
+    return -1;
 
-  connfd = accept(r_server->listenfd, (struct sockaddr *)&cliaddr, 
+  connfd = accept(r_server->listenfd, (struct sockaddr *) &cliaddr, 
                   &cli_length); 
   if (connfd < 0)
     return -1;
 
-  for (i = 0; i < FD_SETSIZE; i++)
-    if (r_server->client_list[i].sockfd < 0)
-    { 
-      r_server->client_list[i].sockfd = connfd;
-      break;
-    }
-
-  if (i == FD_SETSIZE)
+  if (add_client_to_list(connfd, &r_server->list_of_clients) < 0)
   {
     close(connfd);
     return -1;
   }
- 
+
   r_server->maxfd_number = MAX(connfd, r_server->maxfd_number);
-  r_server->max_cli_index = MAX(i, r_server->max_cli_index);
 
   return 0;
 }
 
 /*! \brief Fecha a conexao com um cliente 
  *
- * \param[out] cur_client O cliente a ser considerado 
- * \param[out] set O fd_set em que esta o _cliente
+ * \param[in] client Endereco do cliente atual da lista
+ * \param[out] list_of_clients Lista de clientes 
  */
-void close_client_connection(client *cur_client)
+int close_client_connection(client_node **client, client_list
+                            *list_of_clients) 
 {
-  close(cur_client->sockfd); 
+  int sockfd = (*client)->sockfd;
 
-  if (cur_client->buffer != NULL)
-    free(cur_client->buffer);
+  /* move a lista para nao perder a referencia */
+  *client = (*client)->next;
 
-  if (cur_client->file != NULL)
-    fclose(cur_client->file);
-  
-  memset(cur_client, 0, sizeof(*cur_client));
-  cur_client->sockfd = -1;
+  if (remove_client_from_list(sockfd, list_of_clients) < 0)
+    return -1;
+
+  return 0;
 }
 
 /*! \brief Inicializa a estrutura r_server
  *
  * \param[out] r_server A estrutura a ser inicializada
+ *
  */
 void init_server(server *r_server)
 {
-  int i = 0;
-
   memset(r_server, 0, sizeof(*r_server));
-  r_server->max_cli_index = -1;
   r_server->maxfd_number = -1;
-  for (i = 0; i < FD_SETSIZE; i++)
-    r_server->client_list->sockfd = -1;
 }
 
 /*! \brief Inicializa os fd_sets e a referencia do maior descritor
@@ -357,7 +444,8 @@ void init_server(server *r_server)
  */
 void init_sets(server *r_server)
 {
-  int i = 0;
+  int cur_sockfd = 0;
+  client_node *cur_client = NULL;
 
   FD_ZERO(&r_server->sets.read_s);
   FD_ZERO(&r_server->sets.write_s);
@@ -365,20 +453,18 @@ void init_sets(server *r_server)
   FD_SET(r_server->listenfd, &r_server->sets.read_s);
   r_server->maxfd_number = r_server->listenfd;
 
-  for (i = 0; i <= r_server->max_cli_index; i++)
+  for (cur_client = r_server->list_of_clients.head; cur_client; 
+       cur_client = cur_client->next)
   {
-    int cur_sock = r_server->client_list[i].sockfd;
-    if (cur_sock < 0)
-      continue;
+    cur_sockfd = cur_client->sockfd;
+    r_server->maxfd_number = MAX(cur_sockfd, r_server->maxfd_number);
 
-    r_server->maxfd_number = MAX(cur_sock, r_server->maxfd_number);
-
-    if(!(r_server->client_list[i].flags & REQUEST_READ))
-      FD_SET(cur_sock, &r_server->sets.read_s);
+    if(!(cur_client->flags & REQUEST_READ))
+      FD_SET(cur_sockfd, &r_server->sets.read_s);
     else
-      FD_SET(cur_sock, &r_server->sets.write_s);
+      FD_SET(cur_sockfd, &r_server->sets.write_s);
 
-    FD_SET(cur_sock, &r_server->sets.except_s);
+    FD_SET(cur_sockfd, &r_server->sets.except_s);
   }
 }
 
@@ -392,14 +478,13 @@ void init_sets(server *r_server)
  *
  * \notes E' feito um calloc do buffer
  */
-int read_client_input(client *cur_client)
+int read_client_input(client_node *cur_client)
 {
   int n_bytes = 0;
 
   if (cur_client->buffer == NULL)
   {
     cur_client->buffer = (char *) calloc(BUFFER_LEN, sizeof(char));
-
     if (cur_client->buffer == NULL)
       return -1;
   }
@@ -408,7 +493,8 @@ int read_client_input(client *cur_client)
     return -1;
 
   if ((n_bytes = recv(cur_client->sockfd, cur_client->buffer +
-                      cur_client->pos_buf, BUFFER_LEN - cur_client->pos_buf - 1,
+                      cur_client->pos_buf,
+                      BUFFER_LEN - cur_client->pos_buf - 1,
                       MSG_DONTWAIT)) < 0)
   {  
     if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
@@ -426,7 +512,7 @@ int read_client_input(client *cur_client)
  *
  * \param[out] cur_client A estrutura de _client
  */
-int recv_client_msg (client *cur_client)
+int recv_client_msg (client_node *cur_client)
 { 
   if (read_client_input(cur_client) < 0)
     return -1;
@@ -442,48 +528,22 @@ int recv_client_msg (client *cur_client)
 /* \brief Verifique a mensagem recebida de um cliente, analisando o metodo,
  * o procotolo e o recurso solicitado
  *
- * \param[out] cur_client Contem informacoes a respeito do cliente
  * \param[in] serv_root Caminho do root do servidor
- *
- * \return 0 Caso leitura ok
- * \return -1 Caso haja algum erro na leitura
+ * \param[out] cur_client Contem informacoes a respeito do cliente
  */
-int verify_request(client *cur_client, char *serv_root)
+void verify_request(char *serv_root, client_node *cur_client)
 {
   char method[METHOD_LEN + 1];
   char resource[RESOURCE_LEN + 1];
   char protocol[PROTOCOL_LEN + 1];
 
-  if (extr_req_params(cur_client, method, resource, protocol) < 0)
-  {
-    cur_client->resp_status = BAD_REQUEST;
-    goto error;
-  }
+  extr_req_params(cur_client, method, resource, protocol);  
+  verify_cli_protocol(protocol, cur_client);
+  verify_cli_method(method, cur_client);
+  verify_cli_resource(resource, serv_root, cur_client);
   
-  if (verify_cli_protocol(protocol, &cur_client->protocol) < 0)
-  {
-    cur_client->resp_status = BAD_REQUEST;
-    goto error;
-  }
-
-  if (verify_cli_method(method, &cur_client->method) < 0)
-  {
-    cur_client->resp_status = NOT_IMPLEMENTED;
-    goto error;
-  }
-
-  if ((cur_client->resp_status = verify_cli_resource(resource, serv_root,
-       &cur_client->file)) != OK)
-    goto error;
-
   memset(cur_client->buffer, 0, sizeof(*cur_client->buffer));
   cur_client->pos_buf = 0;
-  return 0;
-
-error:
-  memset(cur_client->buffer, 0, sizeof(*cur_client->buffer));
-  cur_client->pos_buf = 0;
-  return -1;
 }
 
 /*! \brief Funcao que gera a resposta ao cliente e armazena em um buffer
@@ -494,7 +554,7 @@ error:
  * \return 0 Caso OK
  * \return -1 Caso algum erro
  */
-int build_response(client *cur_client)
+int build_response(client_node *cur_client)
 {
   int bytes_read = 0;
 
@@ -522,7 +582,7 @@ int build_response(client *cur_client)
   }
 
   if (bytes_read < BUFFER_LEN - cur_client->pos_buf)
-    cur_client->request_flag = 0;
+    cur_client->flags = cur_client->flags & (~REQUEST_READ);
 
   cur_client->pos_buf += bytes_read;
   return 0;
@@ -536,7 +596,7 @@ int build_response(client *cur_client)
  * \return 0 Caso OK
  * \return -1 Caso haja erro
  */
-int send_response(client *cur_client)
+int send_response(client_node *cur_client)
 {
   int sent_bytes = 0;
 
