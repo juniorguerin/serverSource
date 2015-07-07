@@ -7,7 +7,9 @@
 
 int main(int argc, const char **argv)
 {
+  int velocity = 128;
   server r_server;
+
   init_server(&r_server);
 
   if (0 > analyse_arguments(argc, argv, &r_server))
@@ -27,8 +29,15 @@ int main(int argc, const char **argv)
   {
     int nready = 0;
     client_node *cur_client = NULL;
-    
-    init_sets(&r_server);
+    struct timeval cur_time;
+  
+    cur_time = burst_set(&r_server.last_burst, 
+                         &r_server.list_of_clients);
+    if (!init_sets(&r_server))
+    {
+      sleep_diff_burst(&cur_time, &r_server.last_burst, 1);
+      continue;
+    }
 
     if (0 > (nready = select(r_server.maxfd_number + 1, 
         &r_server.sets.read_s, &r_server.sets.write_s, 
@@ -43,7 +52,7 @@ int main(int argc, const char **argv)
 
     if (FD_ISSET(r_server.listenfd, &r_server.sets.read_s))
     {
-      if (0 > make_connection(&r_server))
+      if (0 > make_connection(&r_server, velocity))
         continue;
 
       if (0 >= --nready)

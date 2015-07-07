@@ -298,7 +298,8 @@ int pop_client(int sockfd, client_list *list_of_clients)
  *
  * \param[in] argc Numero de argumentos
  * \param[in] argv Argumentos recebidos com informacoes de porta e root
- * \param[out] r_server Estrutura do servidor, para determinar a porta de escuta
+ * \param[out] r_server Estrutura do servidor, para determinar a porta de 
+ * escuta
  *
  * \return -1 caso algum erro tenha sido detectado
  * \return 0 caso OK
@@ -371,11 +372,12 @@ error:
 /*! \brief Aceita novas conexoes e aloca no vetor de clientes
  *
  * \param[in] r_server A estrutura servidor para a conexao de um cliente
+ * \param[in] velocity A velocidade de transmissao em kb/s
  *
  * \return -1 caso aconteça algum erro
  * \return 0 caso OK
  */
-int make_connection(server *r_server)
+int make_connection(server *r_server, unsigned int velocity)
 {
   int connfd = -1;
   struct sockaddr_in cliaddr;
@@ -398,6 +400,7 @@ int make_connection(server *r_server)
   }
 
   append_client(new_client, &r_server->list_of_clients);
+  bucket_init(velocity, &new_client->bucket);
   r_server->maxfd_number = MAX(connfd, r_server->maxfd_number);
 
   return 0;
@@ -447,10 +450,15 @@ void init_server(server *r_server)
 /*! \brief Inicializa os fd_sets e a referencia do maior descritor
  *
  * \param[out] r_server Estrutura do servidor
+ *
+ * \return 0 Caso nao haja nenhum cliente apto a transmissao
+ * \return 1 Caso haja cliente apto a tramissao ou caso nao haja cliente
+ * conectado
  */
-void init_sets(server *r_server)
+int init_sets(server *r_server)
 {
   int cur_sockfd = 0;
+  int transmission = 0;
   client_node *cur_client = NULL;
 
   FD_ZERO(&r_server->sets.read_s);
@@ -459,19 +467,31 @@ void init_sets(server *r_server)
   FD_SET(r_server->listenfd, &r_server->sets.read_s);
   r_server->maxfd_number = r_server->listenfd;
 
-  for (cur_client = r_server->list_of_clients.head; cur_client; 
-       cur_client = cur_client->next)
+  /* caso nao haja cliente conectado */
+  if (!r_server->list_of_clients.size)
+    return 1;
+
+  cur_client = r_server->list_of_clients.head;
+  for(cur_client = r_server->list_of_clients.head; cur_client; cur_client =
+    cur_client->next)
   {
     cur_sockfd = cur_client->sockfd;
     r_server->maxfd_number = MAX(cur_sockfd, r_server->maxfd_number);
 
-    if(!(cur_client->flags & REQUEST_READ))
+    if (!cur_client->bucket.transmission)
+      continue;
+
+    if (!(cur_client->flags & REQUEST_READ))
       FD_SET(cur_sockfd, &r_server->sets.read_s);
     else
       FD_SET(cur_sockfd, &r_server->sets.write_s);
 
     FD_SET(cur_sockfd, &r_server->sets.except_s);
+
+    transmission = 1;
   }
+
+  return transmission;
 }
 
 /*! \brief Funcao que testa se ha buffer alocado, aloca caso 
@@ -486,7 +506,8 @@ void init_sets(server *r_server)
  */
 int read_client_input(client_node *cur_client)
 {
-  int n_bytes = 0;
+  int bytes_received = 0;
+  int bytes_to_receive = 0;
 
   if (!cur_client->buffer)
   {
@@ -494,22 +515,23 @@ int read_client_input(client_node *cur_client)
     if (!cur_client->buffer)
       return -1;
   }
-   
+  
   if (BUFFER_LEN - 1 == cur_client->pos_buf)
     return -1;
 
-  if (0 > (n_bytes = recv(cur_client->sockfd, cur_client->buffer +
-                      cur_client->pos_buf,
-                      BUFFER_LEN - cur_client->pos_buf - 1,
-                      MSG_DONTWAIT)))
+  bytes_to_receive = BUFFER_LEN - cur_client->pos_buf - 1;
+  if (0 > (bytes_received = recv(cur_client->sockfd, 
+           cur_client->buffer + cur_client->pos_buf, bytes_to_receive, 
+           MSG_DONTWAIT)))
   {  
     if (EINTR == errno || EAGAIN == errno || EWOULDBLOCK == errno)
       return 0;
     
     return -1;
   }
-    
-  cur_client->pos_buf += n_bytes;
+  
+  bucket_withdraw(bytes_received, &cur_client->bucket);
+  cur_client->pos_buf += bytes_received;
   return 0; 
 }
 
@@ -520,6 +542,11 @@ int read_client_input(client_node *cur_client)
  */
 int recv_client_msg (client_node *cur_client)
 { 
+  int bytes_to_receive = BUFFER_LEN - cur_client->pos_buf - 1;
+  if (0 > bucket_token_status(&cur_client->bucket, 
+      bytes_to_receive))
+    return 0;
+
   if (0 > read_client_input(cur_client))
     return -1;
 
@@ -564,9 +591,11 @@ int build_response(client_node *cur_client)
 {
   int bytes_read = 0;
 
-  /*! Nao ha necessidade de escrever no buffer atual - sera
-   * necessario enviar novamente
-   */
+  /* nao ha saldo para transmissao */
+  if (0 > bucket_token_status(&cur_client->bucket, BUFFER_LEN))
+    return 0;
+
+  /*! Nao ha necessidade de escrever no buffer atual */
   if (cur_client->flags & PENDING_DATA)
     return 0;
 
@@ -579,13 +608,11 @@ int build_response(client_node *cur_client)
     cur_client->pos_buf = 0;
 
   if (OK == cur_client->resp_status)
-  {
-    bytes_read = fread(cur_client->buffer + cur_client->pos_buf, 
-                       sizeof(char), BUFFER_LEN - cur_client->pos_buf, 
-                       cur_client->file);
-    if (0 == bytes_read || 0 != ferror(cur_client->file))
+    if (0 >= (bytes_read = fread(cur_client->buffer + cur_client->pos_buf,
+                                 sizeof(char), 
+                                 BUFFER_LEN - cur_client->pos_buf, 
+                                 cur_client->file)))
       return -1;
-  }
 
   if (bytes_read < BUFFER_LEN - cur_client->pos_buf)
     cur_client->flags = cur_client->flags & (~REQUEST_READ);
@@ -606,8 +633,14 @@ int send_response(client_node *cur_client)
 {
   int sent_bytes = 0;
 
+  /* nao ha saldo para transmissao */
+  if (0 > bucket_token_status(&cur_client->bucket, 
+                              cur_client->pos_buf))
+    return 0;
+  
   if((sent_bytes = send(cur_client->sockfd, cur_client->buffer, 
-                        cur_client->pos_buf, MSG_DONTWAIT)) < 0)
+                        cur_client->pos_buf, 
+                        MSG_NOSIGNAL | MSG_DONTWAIT)) < 0)
   {
     if (EINTR == errno || EAGAIN == errno || EWOULDBLOCK == errno)
     {
@@ -618,7 +651,38 @@ int send_response(client_node *cur_client)
     return -1;
   }
 
+  bucket_withdraw(sent_bytes, &cur_client->bucket);
   cur_client->flags = cur_client->flags & (~PENDING_DATA);
   return 0;
 }
 
+/*! \brief A cada novo burst (1 segundo) preenche todos os tokens
+ *
+ * \param[in] last_fill O momento da ultima recarga de tokens
+ * \param[in] list_of_clients Lista de clientes
+ *
+ * \retunr O tempo usado como referencia para a burst
+ */
+struct timeval burst_set(struct timeval *last_fill, 
+               const client_list *list_of_clients)
+{
+  struct timeval cur_time;
+  gettimeofday(&cur_time, NULL);
+  long time = timeval_subtract(&cur_time, last_fill);
+
+  if (!list_of_clients->size || time >= 1000000)
+  {
+    client_node *cur_client = NULL;
+
+    *last_fill = cur_time;
+    cur_client = list_of_clients->head; 
+    
+    while (cur_client)
+    {
+      bucket_fill(&cur_client->bucket);
+      cur_client = cur_client->next;
+    }
+  }
+
+  return cur_time;
+}

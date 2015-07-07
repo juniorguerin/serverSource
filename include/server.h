@@ -24,6 +24,8 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/un.h>
+#include <time.h>
+#include <token_bucket.h>
 #include <unistd.h>
 
 #undef MAX
@@ -85,6 +87,7 @@ typedef struct client_node_
   http_methods method; /*!< Metodo usado na request */
   http_protocols protocol; /*!< Protocolo usado na request */
   http_code resp_status; /*!< Codigo para a resposta ao cliente */
+  token_bucket bucket; /*!< Bucket para controle de velocidade */
   FILE *file; /*!< Arquivo para o recurso solicitado */
   struct client_node_ *next; /*!< Proximo no' */
 } client_node;
@@ -125,17 +128,18 @@ typedef struct server_
   int listenfd; /*!< O socket de escuta */
   int maxfd_number; /*!< O maior descritor a observar */
   char serv_root[ROOT_LEN]; /*!< O endereco do root do servidor */
+  struct timeval last_burst; /*!< Ultimo inicio de burst */
 } server;
 
 int analyse_arguments(int argc, const char *argv[], server *r_server);
 
 int create_listen_socket(const server *r_server, int listen_backlog);
 
-int make_connection(server *r_server);
+int make_connection(server *r_server, unsigned int velocity);
 
 void init_server(server *r_server);
 
-void init_sets(server *r_server);
+int init_sets(server *r_server);
 
 int read_client_input(client_node *cur_client);
 
@@ -146,5 +150,8 @@ void verify_request(char *serv_root, client_node *cur_client);
 int build_response(client_node *cur_client);
 
 int send_response(client_node *cur_client);
+
+struct timeval burst_set(struct timeval *last_fill, 
+                         const client_list *list_of_clients);
 
 #endif

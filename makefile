@@ -14,7 +14,7 @@ VPATH = ./src
 .PHONY: clean all
 
 REC_WEB_FILES = $(addprefix $(OBJ)/, client.o clienteweb.o)
-SERV_FILES = $(addprefix $(OBJ)/, server.o servidorweb.o)
+SERV_FILES = $(addprefix $(OBJ)/, server.o servidorweb.o token_bucket.o)
 
 all: clienteweb servidorweb 
 
