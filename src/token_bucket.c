@@ -14,7 +14,7 @@
 void bucket_init(const unsigned int velocity, token_bucket *bucket)
 {
   bucket->rate = velocity * 1024;
-  bucket->tokens = bucket->rate;
+  bucket->remain_tokens = bucket->rate;
   bucket->transmission = 1;
 }
 
@@ -29,10 +29,10 @@ void bucket_init(const unsigned int velocity, token_bucket *bucket)
 int bucket_withdraw(const unsigned int remove_tokens,
                           token_bucket *bucket)
 {
-  if (0 > bucket_token_status(bucket, remove_tokens))
+  if (0 > bucket_verify_tokens(bucket, remove_tokens))
     return -1;
 
-  bucket->tokens -= remove_tokens;
+  bucket->remain_tokens -= remove_tokens;
   return 0;
 }
 
@@ -42,7 +42,7 @@ int bucket_withdraw(const unsigned int remove_tokens,
  */
 void bucket_fill(token_bucket *bucket)
 {
-  bucket->tokens = bucket->rate;
+  bucket->remain_tokens = bucket->rate;
   bucket->transmission = 1;
 }
 
@@ -56,9 +56,9 @@ void bucket_fill(token_bucket *bucket)
  *
  * \note Coloca a flag de transmissao como 0 caso nao tenha tokens
  */
-int bucket_token_status(token_bucket *bucket, unsigned int tokens)
+int bucket_verify_tokens(token_bucket *bucket, unsigned int tokens)
 {
-  if (bucket->tokens < tokens)
+  if (bucket->remain_tokens < tokens)
   {
     bucket->transmission = 0;
     return -1;
@@ -79,7 +79,7 @@ long timeval_subtract(struct timeval *cur_time,
                      struct timeval *last_time)
 {
   int usec = cur_time->tv_usec - last_time->tv_usec;
-  int sec = (cur_time->tv_sec - last_time->tv_sec);
+  int sec = cur_time->tv_sec - last_time->tv_sec;
  
   if (0 > sec)
     return -1;

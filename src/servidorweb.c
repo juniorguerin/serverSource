@@ -7,14 +7,12 @@
 
 int main(int argc, const char **argv)
 {
-  int velocity = 128;
   server r_server;
-
   init_server(&r_server);
 
   if (0 > analyse_arguments(argc, argv, &r_server))
   {
-    fprintf(stderr, "usage: <root> <port>\n");
+    fprintf(stderr, "usage: <root> <port> <velocity>\n");
     return -1;
   }
 
@@ -31,8 +29,8 @@ int main(int argc, const char **argv)
     client_node *cur_client = NULL;
     struct timeval cur_time;
   
-    cur_time = burst_set(&r_server.last_burst, 
-                         &r_server.list_of_clients);
+    cur_time = burst_init(&r_server.last_burst, 
+                          &r_server.list_of_clients);
     if (!init_sets(&r_server))
     {
       sleep_diff_burst(&cur_time, &r_server.last_burst, 1);
@@ -52,7 +50,7 @@ int main(int argc, const char **argv)
 
     if (FD_ISSET(r_server.listenfd, &r_server.sets.read_s))
     {
-      if (0 > make_connection(&r_server, velocity))
+      if (0 > make_connection(&r_server))
         continue;
 
       if (0 >= --nready)

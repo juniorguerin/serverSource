@@ -309,22 +309,27 @@ int analyse_arguments(int argc, const char *argv[], server *r_server)
   char *endptr = NULL;
   int arg_len = 0;
 
-  if (argc < 3)
+  if (argc != 4)
     return -1;
 
-  if ((arg_len = strlen(argv[2])) >= PORT_LEN)
-    return -1;
-  r_server->listen_port = strtol(argv[2], &endptr, PORT_NUMBER_BASE);
-  arg_len = strlen(argv[2]);
-  if(endptr - argv[2] < arg_len)
+  if (ROOT_LEN <= (arg_len = strlen(argv[1])))
     return -1;
 
-  if ((arg_len = strlen(argv[1])) >= ROOT_LEN)
-    return -1;
-
-  if (0 != access(argv[1], F_OK))
+  if (access(argv[1], F_OK))
     return -1;
   strncpy(r_server->serv_root, argv[1], ROOT_LEN - 1);
+  
+  if (PORT_LEN <= (arg_len = strlen(argv[2])))
+    return -1;
+  r_server->listen_port = strtol(argv[2], &endptr, NUMBER_BASE);
+  if (endptr - argv[2] < arg_len)
+    return -1;
+  
+  if (VEL_LEN <= (arg_len = strlen(argv[3])))
+    return -1;
+  r_server->velocity = strtol(argv[3], &endptr, NUMBER_BASE);
+  if (endptr - argv[3] < arg_len)
+    return -1;
 
   return 0;
 }
@@ -377,7 +382,7 @@ error:
  * \return -1 caso aconteça algum erro
  * \return 0 caso OK
  */
-int make_connection(server *r_server, unsigned int velocity)
+int make_connection(server *r_server)
 {
   int connfd = -1;
   struct sockaddr_in cliaddr;
@@ -400,7 +405,7 @@ int make_connection(server *r_server, unsigned int velocity)
   }
 
   append_client(new_client, &r_server->list_of_clients);
-  bucket_init(velocity, &new_client->bucket);
+  bucket_init(r_server->velocity, &new_client->bucket);
   r_server->maxfd_number = MAX(connfd, r_server->maxfd_number);
 
   return 0;
@@ -471,16 +476,15 @@ int init_sets(server *r_server)
   if (!r_server->list_of_clients.size)
     return 1;
 
-  cur_client = r_server->list_of_clients.head;
-  for(cur_client = r_server->list_of_clients.head; cur_client; cur_client =
-    cur_client->next)
+  for(cur_client = r_server->list_of_clients.head; cur_client; 
+      cur_client = cur_client->next)
   {
-    cur_sockfd = cur_client->sockfd;
-    r_server->maxfd_number = MAX(cur_sockfd, r_server->maxfd_number);
-
     if (!cur_client->bucket.transmission)
       continue;
 
+    cur_sockfd = cur_client->sockfd;
+    r_server->maxfd_number = MAX(cur_sockfd, r_server->maxfd_number);
+    
     if (!(cur_client->flags & REQUEST_READ))
       FD_SET(cur_sockfd, &r_server->sets.read_s);
     else
@@ -543,7 +547,7 @@ int read_client_input(client_node *cur_client)
 int recv_client_msg (client_node *cur_client)
 { 
   int bytes_to_receive = BUFFER_LEN - cur_client->pos_buf - 1;
-  if (0 > bucket_token_status(&cur_client->bucket, 
+  if (0 > bucket_verify_tokens(&cur_client->bucket, 
       bytes_to_receive))
     return 0;
 
@@ -592,7 +596,7 @@ int build_response(client_node *cur_client)
   int bytes_read = 0;
 
   /* nao ha saldo para transmissao */
-  if (0 > bucket_token_status(&cur_client->bucket, BUFFER_LEN))
+  if (0 > bucket_verify_tokens(&cur_client->bucket, BUFFER_LEN))
     return 0;
 
   /*! Nao ha necessidade de escrever no buffer atual */
@@ -634,8 +638,8 @@ int send_response(client_node *cur_client)
   int sent_bytes = 0;
 
   /* nao ha saldo para transmissao */
-  if (0 > bucket_token_status(&cur_client->bucket, 
-                              cur_client->pos_buf))
+  if (0 > bucket_verify_tokens(&cur_client->bucket, 
+                               cur_client->pos_buf))
     return 0;
   
   if((sent_bytes = send(cur_client->sockfd, cur_client->buffer, 
@@ -663,25 +667,23 @@ int send_response(client_node *cur_client)
  *
  * \retunr O tempo usado como referencia para a burst
  */
-struct timeval burst_set(struct timeval *last_fill, 
+struct timeval burst_init(struct timeval *last_fill, 
                const client_list *list_of_clients)
 {
   struct timeval cur_time;
   gettimeofday(&cur_time, NULL);
   long time = timeval_subtract(&cur_time, last_fill);
 
-  if (!list_of_clients->size || time >= 1000000)
+  /* tempo so' sera negativo na primeira vez */
+  if (time >= 1000000 || time < 0)
   {
     client_node *cur_client = NULL;
 
     *last_fill = cur_time;
-    cur_client = list_of_clients->head; 
-    
-    while (cur_client)
-    {
+
+    for(cur_client = list_of_clients->head; cur_client; 
+        cur_client = cur_client->next)  
       bucket_fill(&cur_client->bucket);
-      cur_client = cur_client->next;
-    }
   }
 
   return cur_time;

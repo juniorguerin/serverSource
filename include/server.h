@@ -40,8 +40,9 @@
 #define REQUEST_SIZE BUFSIZ
 #define LISTEN_BACKLOG 512
 #define ROOT_LEN 2048
-#define PORT_NUMBER_BASE 10
+#define NUMBER_BASE 10
 #define PORT_LEN 8
+#define VEL_LEN 6
 #define PROTOCOL_LEN 9
 #define METHOD_LEN 5 
 #define RESOURCE_LEN 200
@@ -129,6 +130,7 @@ typedef struct server_
   int listenfd; /*!< O socket de escuta */
   int maxfd_number; /*!< O maior descritor a observar */
   char serv_root[ROOT_LEN]; /*!< O endereco do root do servidor */
+  unsigned int velocity; /*!< Velocidade de conexao */
   struct timeval last_burst; /*!< Ultimo inicio de burst */
 } server;
 
@@ -136,7 +138,7 @@ int analyse_arguments(int argc, const char *argv[], server *r_server);
 
 int create_listen_socket(const server *r_server, int listen_backlog);
 
-int make_connection(server *r_server, unsigned int velocity);
+int make_connection(server *r_server);
 
 void init_server(server *r_server);
 
@@ -152,7 +154,7 @@ int build_response(client_node *cur_client);
 
 int send_response(client_node *cur_client);
 
-struct timeval burst_set(struct timeval *last_fill, 
+struct timeval burst_init(struct timeval *last_fill, 
                          const client_list *list_of_clients);
 
 #endif

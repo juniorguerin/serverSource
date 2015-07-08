@@ -13,7 +13,7 @@
 typedef struct token_bucket_
 {
   unsigned int rate; /*!< Tokens adicionados em milisegundos */
-  unsigned int tokens; /*!< Numero atual de tokens */
+  unsigned int remain_tokens; /*!< Numero atual de tokens */
   unsigned int transmission:1; /*!< Flag para transmissao */
 } token_bucket;
 
@@ -24,7 +24,7 @@ int bucket_withdraw(const unsigned int remove_tokens,
 
 void bucket_fill(token_bucket *bucket);
 
-int bucket_token_status(token_bucket *bucket, const unsigned int tokens);
+int bucket_verify_tokens(token_bucket *bucket, const unsigned int tokens);
 
 long timeval_subtract(struct timeval *cur_time, 
                       struct timeval *last_time);
