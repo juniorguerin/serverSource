@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <multithread.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <signal.h>

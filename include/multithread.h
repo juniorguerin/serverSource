@@ -26,9 +26,9 @@ typedef struct task_list_ {
   int size; /*<! Tamanho da lista */
 } task_list;
 
-void append_task_list(task_node *new_node, task_list *queue);
+void append_task_to_list(task_node *new_node, task_list *queue);
 
-int remove_task_list(task_node *node, task_list *queue);
+int remove_task_f_list(task_node *node, task_list *queue);
 
 typedef struct threadpool_ {
   pthread_mutex_t lock; /*<! Variavel para mutex */
@@ -38,8 +38,6 @@ typedef struct threadpool_ {
   int thread_count; /*<! Numero de threads */
   int queue_size; /*<! Tamanho da queue */
 } threadpool;
-
-static void *threadpool_thread(void *threadpool);
 
 int threadpool_free(threadpool *pool);
 

@@ -5,6 +5,38 @@
 
 #include "multithread.h"
 
+/*! \brief Distribui as tarefas entre as threads
+ *
+ * \param[out] cur_threadpool O pool de threads
+ */
+static void *threadpool_thread(void *cur_threadpool)
+{
+  threadpool *pool = (threadpool *) cur_threadpool;
+  task_node task;
+
+  while (1)
+  {
+    pthread_mutex_lock(&(pool->lock));
+
+    while (!pool->queue->size)
+      pthread_cond_wait(&(pool->notify), &(pool->lock));
+
+    task.function = pool->queue->head->function;
+    task.argument = pool->queue->head->argument;
+    remove_task_f_list(pool->queue->head, pool->queue);
+    free_task_node(pool->queue->head);
+
+    pthread_mutex_unlock(&(pool->lock));
+
+    (*(task.function))(task.argument);
+    
+    // quando a funcao terminar, comunica com um socket a thread 
+    // principal (analisar)
+  }
+
+  pthread_mutex_unlock(&(pool->lock));
+}
+
 /*! \brief Funcao que cria um pool de threads
  *
  * \param[in] thread_count O numero de threads
@@ -20,7 +52,6 @@ threadpool *threadpool_create(int thread_count)
   if (!(pool = (threadpool *) calloc(1, sizeof(threadpool)))) 
     goto error;
 
-  //pool->queue_size = queue_size;
   pool->threads = (pthread_t *) calloc(thread_count, 
                                        sizeof(pthread_t));
   pool->queue = (task_list *) calloc (1, sizeof(task_list));
@@ -72,7 +103,7 @@ int threadpool_add(void (*function)(void *), void *argument,
 
   if(!(new_node = alloc_task_node(function, argument)))
     return -1;
-  append_task_list(new_node, pool->queue);
+  append_task_to_list(new_node, pool->queue);
 
   if (pthread_cond_signal(&(pool->notify)))
     return -1;
@@ -137,38 +168,6 @@ int threadpool_free(threadpool *pool)
   return 0;
 }
 
-/*! \brief Distribui as tarefas entre as threads
- *
- * \param[out] cur_threadpool O pool de threads
- */
-static void *threadpool_thread(void *cur_threadpool)
-{
-  threadpool *pool = (threadpool *) cur_threadpool;
-  task_node task;
-
-  while (1)
-  {
-    pthread_mutex_lock(&(pool->lock));
-
-    while (!pool->queue->size)
-      pthread_cond_wait(&(pool->notify), &(pool->lock));
-
-    task.function = pool->queue->head->function;
-    task.argument = pool->queue->head->argument;
-    remove_task_list(pool->queue->head, pool->queue);
-    free_task_node(pool->queue->head);
-
-    pthread_mutex_unlock(&(pool->lock));
-
-    (*(task.function))(task.argument);
-    
-    // quando a funcao terminar, comunica com um socket a thread 
-    // principal (analisar)
-  }
-
-  pthread_mutex_unlock(&(pool->lock));
-}
-
 /*! \brief Aloca um no' para uma tarefa
  *
  * \param[in] function Ponteiro para a funcao
@@ -211,7 +210,7 @@ int free_task_node(task_node *node)
  * \param[in] new_node O novo no a ser adicionado
  * \param[out] queue A lista
  */
-void append_task_list(task_node *new_node, task_list *queue)
+void append_task_to_list(task_node *new_node, task_list *queue)
 {
   task_node *last_node = NULL;
 
@@ -238,7 +237,7 @@ void append_task_list(task_node *new_node, task_list *queue)
  * \return -1 Caso haja erro
  * \return 0 Caso ok
  */
-int remove_task_list(task_node *node, task_list *queue)
+int remove_task_f_list(task_node *node, task_list *queue)
 {
   if (!node || !queue->size)
     return -1;

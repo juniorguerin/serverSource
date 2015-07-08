@@ -14,7 +14,7 @@ VPATH = ./src
 .PHONY: clean all
 
 REC_WEB_FILES = $(addprefix $(OBJ)/, client.o clienteweb.o)
-SERV_FILES = $(addprefix $(OBJ)/, server.o servidorweb.o token_bucket.o)
+SERV_FILES = $(addprefix $(OBJ)/, server.o servidorweb.o token_bucket.o multithread.o)
 
 all: clienteweb servidorweb 
 
@@ -22,7 +22,7 @@ clienteweb: $(REC_WEB_FILES)
 	$(CC) $^ -o clienteweb
 
 servidorweb: $(SERV_FILES)
-	$(CC) $^ -o servidorweb
+	$(CC) -pthread $^ -o servidorweb
 
 # Gera os .o para o projeto
 $(OBJ)/%.o: %.c
