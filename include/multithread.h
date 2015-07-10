@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#define THREAD_NUM 4
+
 typedef struct task_node_ {
     void (*function)(void *); /*<! Ponteiro para a funcao da tarefa */
     void *argument; /*<! Argumento passado para a funcao */
@@ -35,11 +37,10 @@ typedef struct threadpool_ {
   pthread_cond_t notify; /*<! Variavel para notificar threads */
   pthread_t *threads; /*<! Array de threads */
   task_list *queue; /*<! Array de queue */
+  int shut_down; /*<! Flag para encerramento */
   int thread_count; /*<! Numero de threads */
   int queue_size; /*<! Tamanho da queue */
 } threadpool;
-
-int threadpool_free(threadpool *pool);
 
 threadpool *threadpool_create(int thread_count);
 

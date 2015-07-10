@@ -73,29 +73,30 @@ int bucket_verify_tokens(token_bucket *bucket, unsigned int tokens)
  * \param[in] last_time Momento anterior
  *
  * \return O tempo em microsegundos
- * \return -1 Caso o tempo anterior seja maior que o recente
+ * \return 0 Caso o tempo anterior seja maior que o recente
  */
 long timeval_subtract(struct timeval *cur_time, 
-                     struct timeval *last_time)
+                               struct timeval *last_time)
 {
-  int usec = cur_time->tv_usec - last_time->tv_usec;
-  int sec = cur_time->tv_sec - last_time->tv_sec;
- 
+  long usec = cur_time->tv_usec - last_time->tv_usec;
+  long sec = cur_time->tv_sec - last_time->tv_sec;
+  
   if (0 > sec)
-    return -1;
+    return 0;
 
-  return sec*1000000 + usec;
+  return sec*1000000 + usec; 
 }
 
-/*! \brief Coloca a thread em sleep pela diferenca de tempo do periodo da ultima
- * burst
+/*! \brief Coloca a thread em sleep pelo restante do tempo de 1s com relação a
+ * ultima burst
  *
  * \param[in] cur_time Tempo atual
  * \param[in] last_burst Tempo da ultima burst
- * \param[in] period O periodo de tempo entre cada burst em segundos
  */
-void sleep_diff_burst(struct timeval *cur_time, 
-                      struct timeval *last_burst, long period)
+void sleep_burst_diff(struct timeval *cur_time, 
+                      struct timeval *last_burst)
 {
-  usleep(period*1000000 - timeval_subtract(cur_time, last_burst));
+  long diff_time = timeval_subtract(cur_time,last_burst);
+  unsigned long time_to_sleep = labs(1000000 - diff_time);
+  usleep(time_to_sleep);
 }

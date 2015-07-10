@@ -12,48 +12,78 @@
 static void *threadpool_thread(void *cur_threadpool)
 {
   threadpool *pool = (threadpool *) cur_threadpool;
-  task_node task;
+  task_node *task = NULL;
 
   while (1)
   {
     pthread_mutex_lock(&(pool->lock));
 
-    while (!pool->queue->size)
+    while (!pool->queue->size && !pool->shut_down)
       pthread_cond_wait(&(pool->notify), &(pool->lock));
 
-    task.function = pool->queue->head->function;
-    task.argument = pool->queue->head->argument;
+    if (pool->shut_down)
+      break;
+
+    task = pool->queue->head;
     remove_task_f_list(pool->queue->head, pool->queue);
-    free_task_node(pool->queue->head);
 
     pthread_mutex_unlock(&(pool->lock));
 
-    (*(task.function))(task.argument);
-    
+    (*(task->function))(task->argument);
+
     // quando a funcao terminar, comunica com um socket a thread 
     // principal (analisar)
+    
+    free_task_node(task);
   }
-
+  
   pthread_mutex_unlock(&(pool->lock));
+  pthread_exit(NULL);
+  return (NULL);
 }
 
-/*! \brief Funcao que cria um pool de threads
+/*! \brief Libera as variaveis do pool de threads
  *
- * \param[in] thread_count O numero de threads
+ * \param[out] pool O pool de threads
+ *
+ * \return -1 Caso haja algum problema
+ * \return 0 Caso ok
+ */
+static int threadpool_free(threadpool *pool)
+{
+  if (!pool)
+    return -1;
+
+  if (pool->threads)
+    free(pool->threads);
+
+  if (pool->queue)
+    free(pool->queue);
+
+  pthread_mutex_lock(&(pool->lock));
+  pthread_mutex_destroy(&(pool->lock));
+  pthread_cond_destroy(&(pool->notify));
+
+  free(pool);    
+  return 0;
+}
+
+/*! \brief Funcao que inicia um pool de threads
+ *
+ * \param[in] thread_num O numero de threads
  *
  * \return NULL Caso haja erro
  * \return threadpool O pool de threads
  */
-threadpool *threadpool_create(int thread_count)
+threadpool *threadpool_create(int thread_num)
 {
-  threadpool *pool;
+  threadpool *pool = NULL;
   int i;
 
   if (!(pool = (threadpool *) calloc(1, sizeof(threadpool)))) 
-    goto error;
+    return NULL;
 
-  pool->threads = (pthread_t *) calloc(thread_count, 
-                                       sizeof(pthread_t));
+  pool->threads = (pthread_t *) calloc(thread_num, sizeof(pthread_t));
   pool->queue = (task_list *) calloc (1, sizeof(task_list));
 
   if (pthread_mutex_init(&(pool->lock), NULL) ||
@@ -61,14 +91,11 @@ threadpool *threadpool_create(int thread_count)
       !pool->threads || !pool->queue) 
     goto error;
 
-  for (i = 0; i < thread_count; i++)
+  for (i = 0; i < thread_num; i++)
   {
-    if(pthread_create(&(pool->threads[i]), NULL, threadpool_thread, 
+    if (pthread_create(&(pool->threads[i]), NULL, threadpool_thread, 
        (void*)pool))
-    {
-      threadpool_destroy(pool);
-      return NULL;
-    }
+      goto error;
     
     pool->thread_count++;
   }
@@ -76,19 +103,18 @@ threadpool *threadpool_create(int thread_count)
   return pool;
 
 error:
-  if (pool)
-    threadpool_free(pool);
-  
+  threadpool_destroy(pool);
   return NULL;
 }
 
 /*! \brief Adiciona uma tarefa ao pool de threads
  *
- * \param[in] (*function) A tarefa / funcao  a ser realizada
+ * \param[in] function A funcao a ser executada
  * \param[in] Os argumentos para a funcao
  * \param[out] pool O pool de threads
  *
  * \return -1 Caso haja algum erro
+ * \return 0 Caso OK
  */
 int threadpool_add(void (*function)(void *), void *argument, 
                    threadpool *pool) 
@@ -114,7 +140,8 @@ int threadpool_add(void (*function)(void *), void *argument,
   return 0;
 }
 
-/*! \brief Procedimentos iniciais para destruir o pool de threads
+/*! \brief Elimina o pool de threads quando ha threads em 
+ * funcionamento
  *
  * \param[out] pool O pool a ser eliminado
  *
@@ -131,40 +158,16 @@ int threadpool_destroy(threadpool *pool)
   if (pthread_mutex_lock(&(pool->lock)))
     return -1;
 
+  pool->shut_down = 1;
   if (pthread_cond_broadcast(&(pool->notify)) ||
       pthread_mutex_unlock(&(pool->lock)))
-    return -1;
+    break;
 
   for (i = 0; i < pool->thread_count; i++)
     if (pthread_join(pool->threads[i], NULL))
         return -1;
 
   threadpool_free(pool);
-  return 0;
-}
-
-/*! \brief Libera as variaveis do pool de threads
- *
- * \param[out] pool O pool de threads
- *
- * \return -1 Caso haja algum problema
- * \return 0 Caso ok
- */
-int threadpool_free(threadpool *pool)
-{
-  if (!pool)
-    return -1;
-
-  if (pool->threads)
-  {
-    free(pool->threads);
-    free(pool->queue);
-    pthread_mutex_lock(&(pool->lock));
-    pthread_mutex_destroy(&(pool->lock));
-    pthread_cond_destroy(&(pool->notify));
-  }
-
-  free(pool);    
   return 0;
 }
 
@@ -242,15 +245,18 @@ int remove_task_f_list(task_node *node, task_list *queue)
   if (!node || !queue->size)
     return -1;
 
-  if (queue->size == 1)
+  if (node == queue->head)
     queue->head = node->next;
+  else
+  {
+    if (node->next)
+      node->next->before = node->before;
 
-  if (node->next)
-    node->next->before = node->before;
+    if (node->before)
+      node->before->next = node->next;
+  }
 
-  if (node->before)
-    node->before->next = node->next;
-  
+  queue->size--;
   return 0;
 }
 

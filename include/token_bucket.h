@@ -7,6 +7,7 @@
 #define TOKEN_BUCKET_H
 
 #include <time.h>
+#include <stdlib.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -29,7 +30,7 @@ int bucket_verify_tokens(token_bucket *bucket, const unsigned int tokens);
 long timeval_subtract(struct timeval *cur_time, 
                       struct timeval *last_time);
 
-void sleep_diff_burst(struct timeval *cur_time, 
-                      struct timeval *last_burst, long period);
+void sleep_burst_diff(struct timeval *cur_time, 
+                      struct timeval *last_burst);
 
 #endif

@@ -256,6 +256,7 @@ void append_client(client_node *client, client_list *list_of_clients)
          last_client = last_client->next)
       ;
     last_client->next = client;
+    client->before = last_client;
     list_of_clients->size++;
   }
 }
@@ -268,29 +269,23 @@ void append_client(client_node *client, client_list *list_of_clients)
  * \return -1 Caso ocorra algum erro
  * \return 0 Caso ok
  */
-int pop_client(int sockfd, client_list *list_of_clients)
+int pop_client(client_node *client, client_list *list_of_clients)
 {
-  client_node *client_before = NULL;
-  client_node *client_remove = NULL;
-
-  if (0 >= list_of_clients->size)
+  if (!client || !list_of_clients->size)
     return -1;
 
-  for(client_remove = list_of_clients->head; 
-      sockfd != client_remove->sockfd && client_remove->next;  
-      client_before = client_remove, client_remove = client_remove->next)
-    ;
-
-  if (!client_remove)
-    return -1;
-
-  if (client_remove == list_of_clients->head)
-    list_of_clients->head = client_remove->next;
+  if (client == list_of_clients->head)
+    list_of_clients->head = client->next;
   else
-    client_before->next = client_remove->next;
-  
-  list_of_clients->size--;
+  {
+    if (client->next)
+      client->next->before = client->before;
 
+    if (client->before)
+      client->before->next = client->next;
+  }
+ 
+  list_of_clients->size--;
   return 0;
 }
 
@@ -337,40 +332,72 @@ int analyse_arguments(int argc, const char *argv[], server *r_server)
 /*! \brief Cria o socket para escuta em porta passada como parametro
  *
  * \param[in] r_server Estrutura do servidor, para usar a porta de escuta
- * \param[in] listen_backlog Numero de conexoes em espera
  *
- * \return -1 caso ocorra algum erro
- * \return socket caso esteja ok
+ * \return -1 Caso ocorra algum erro
+ * \return listen_socket Caso esteja ok
  */
-int create_listen_socket(const server *r_server, int listen_backlog)
+int create_listenfd(const server *r_server)
 {
   struct sockaddr_in servaddr;
   int listen_socket;
   int enabled = 1;
 
-  listen_socket = socket(AF_INET, SOCK_STREAM, 0);
-  if (listen_socket < 0)
+  if (0 > (listen_socket = socket(AF_INET, SOCK_STREAM, 0)))
     return -1;
+  setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &enabled,
+             sizeof(int));
   
   bzero(&servaddr, sizeof(servaddr));
   servaddr.sin_family = AF_INET;
   servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
   servaddr.sin_port = htons(r_server->listen_port);
-
-  setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &enabled,
-             sizeof(int));
   
-  if (bind(listen_socket, (struct sockaddr *)&servaddr,
-      sizeof(servaddr)) == -1)
+  if (0 > bind(listen_socket, (struct sockaddr *)&servaddr,
+      sizeof(servaddr)))
     goto error;
 
-  if (listen(listen_socket, listen_backlog) == -1)
+  if (0 > listen(listen_socket, LISTEN_BACKLOG))
     goto error;
 
   return listen_socket;
 
 error:
-  close(listen_socket);
+  if (0 > listen_socket)
+    close(listen_socket);
+  
+  return -1;
+}
+
+/*! \brief Cria o socket local
+ *
+ * \param[in] r_server Estrutura do servidor
+ *
+ * \return -1 Caso ocorra algum erro
+ * \return local_listen_socket Caso esteja ok
+ */
+int create_local_socket(const server *r_server)
+{
+  struct sockaddr_un servaddr;
+  int l_socket;
+
+  if (0 > (l_socket = socket(AF_UNIX, SOCK_DGRAM, 0)))
+    return -1;
+  
+  bzero(&servaddr, sizeof(servaddr));
+  servaddr.sun_family = AF_UNIX;
+  strncpy(servaddr.sun_path, r_server->lsocket_name, LSOCKET_NAME - 1);
+
+  unlink(r_server->lsocket_name);
+  if (0 > bind(l_socket, (struct sockaddr *)&servaddr, 
+               sizeof(servaddr)))
+    goto error;
+
+  return l_socket;
+
+error:
+  if (0 > l_socket)
+    close(l_socket);
+
   return -1;
 }
 
@@ -424,16 +451,13 @@ int make_connection(server *r_server)
 int remove_client(client_node **cur_client, 
                   client_list *list_of_clients) 
 {
-  int sockfd;
   client_node *client_remove = NULL;
   
-  sockfd = (*cur_client)->sockfd;
-
   /* Passa ao proximo para nao perder a referencia */
   client_remove = *cur_client;
   *cur_client = (*cur_client)->next;
 
-  if(0 > pop_client(sockfd, list_of_clients))
+  if(0 > pop_client(client_remove, list_of_clients))
     return -1;
   
   free_client_node(client_remove);
@@ -449,6 +473,7 @@ int remove_client(client_node **cur_client,
 void init_server(server *r_server)
 {
   memset(r_server, 0, sizeof(*r_server));
+  strcpy(r_server->lsocket_name, "./server_treinamento");
   r_server->maxfd_number = -1;
 }
 
@@ -485,10 +510,11 @@ int init_sets(server *r_server)
     cur_sockfd = cur_client->sockfd;
     r_server->maxfd_number = MAX(cur_sockfd, r_server->maxfd_number);
     
-    if (!(cur_client->flags & REQUEST_READ))
-      FD_SET(cur_sockfd, &r_server->sets.read_s);
-    else
+    if ((cur_client->status & WRITE_HEADER) || 
+        (cur_client->status & WRITE_DATA))
       FD_SET(cur_sockfd, &r_server->sets.write_s);
+    else
+      FD_SET(cur_sockfd, &r_server->sets.read_s);
 
     FD_SET(cur_sockfd, &r_server->sets.except_s);
 
@@ -555,9 +581,9 @@ int recv_client_msg (client_node *cur_client)
     return -1;
 
   if (!verify_double_line(cur_client->buffer))
-    cur_client->flags = cur_client->flags & (~REQUEST_READ);
+    cur_client->status = cur_client->status & (~REQUEST_RECEIVED);
   else
-    cur_client->flags = cur_client->flags | REQUEST_READ;
+    cur_client->status = cur_client->status | REQUEST_RECEIVED;
 
   return 0; 
 }
@@ -578,9 +604,9 @@ void verify_request(char *serv_root, client_node *cur_client)
   verify_cli_protocol(protocol, cur_client);
   verify_cli_method(method, cur_client);
   verify_cli_resource(resource, serv_root, cur_client);
-  
-  memset(cur_client->buffer, 0, sizeof(*cur_client->buffer));
-  cur_client->pos_buf = 0;
+
+  cur_client->status = cur_client->status & (~REQUEST_RECEIVED);
+  cur_client->status = cur_client->status | WRITE_HEADER;
 }
 
 /*! \brief Funcao que gera a resposta ao cliente e armazena em um buffer
@@ -600,16 +626,17 @@ int build_response(client_node *cur_client)
     return 0;
 
   /*! Nao ha necessidade de escrever no buffer atual */
-  if (cur_client->flags & PENDING_DATA)
+  if (cur_client->status & PENDING_DATA)
     return 0;
 
-  if (!cur_client->pos_buf)
+  if (cur_client->status & WRITE_HEADER)
   {
     if (0 > create_header(cur_client))
       return -1;
+
+    cur_client->status = cur_client->status & (~WRITE_HEADER);
+    cur_client->status = cur_client->status | WRITE_DATA;
   }
-  else
-    cur_client->pos_buf = 0;
 
   if (OK == cur_client->resp_status)
     if (0 >= (bytes_read = fread(cur_client->buffer + cur_client->pos_buf,
@@ -619,7 +646,7 @@ int build_response(client_node *cur_client)
       return -1;
 
   if (bytes_read < BUFFER_LEN - cur_client->pos_buf)
-    cur_client->flags = cur_client->flags & (~REQUEST_READ);
+    cur_client->status = cur_client->status & (~WRITE_DATA);
 
   cur_client->pos_buf += bytes_read;
   return 0;
@@ -648,7 +675,7 @@ int send_response(client_node *cur_client)
   {
     if (EINTR == errno || EAGAIN == errno || EWOULDBLOCK == errno)
     {
-      cur_client->flags = cur_client->flags | PENDING_DATA;
+      cur_client->status = cur_client->status | PENDING_DATA;
       return 0;
     }
     
@@ -656,7 +683,8 @@ int send_response(client_node *cur_client)
   }
 
   bucket_withdraw(sent_bytes, &cur_client->bucket);
-  cur_client->flags = cur_client->flags & (~PENDING_DATA);
+  cur_client->status = cur_client->status & (~PENDING_DATA);
+  cur_client->pos_buf = 0;
   return 0;
 }
 
@@ -675,7 +703,7 @@ struct timeval burst_init(struct timeval *last_fill,
   long time = timeval_subtract(&cur_time, last_fill);
 
   /* tempo so' sera negativo na primeira vez */
-  if (time >= 1000000 || time < 0)
+  if (time >= 1000000)
   {
     client_node *cur_client = NULL;
 

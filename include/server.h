@@ -49,10 +49,12 @@
 #define STR_PROTOCOL_LEN STR(PROTOCOL_LEN)
 #define STR_METHOD_LEN STR(METHOD_LEN)
 #define STR_RESOURCE_LEN STR(RESOURCE_LEN)
-#define LIMIT_SEND 5
+#define LSOCKET_NAME 64
 
 #define PENDING_DATA 0x01
-#define REQUEST_READ 0x02
+#define REQUEST_RECEIVED 0x02
+#define WRITE_DATA 0x04
+#define WRITE_HEADER 0x08
 
 extern const char *supported_methods[];
 typedef enum http_methods_
@@ -85,13 +87,14 @@ typedef struct client_node_
   int sockfd; /*!< Socket de conexao */
   char *buffer; /*!< Buffer do cliente */
   int pos_buf; /*!< Posicao da escrita no buffer */
-  unsigned char flags; /*!< Flags para o estado do cliente */
+  unsigned char status; /*!< Flags para o estado do cliente */
   http_methods method; /*!< Metodo usado na request */
   http_protocols protocol; /*!< Protocolo usado na request */
   http_code resp_status; /*!< Codigo para a resposta ao cliente */
-  token_bucket bucket; /*!< Bucket para controle de velocidade */
   FILE *file; /*!< Arquivo para o recurso solicitado */
+  token_bucket bucket; /*!< Bucket para controle de velocidade */
   struct client_node_ *next; /*!< Proximo no' */
+  struct client_node_ *before; /*!< No' anterior */
 } client_node;
 
 /*! \brief Lista de clients  */
@@ -103,7 +106,7 @@ typedef struct client_list_
 
 void append_client(client_node *client, client_list *list_of_clients);
 
-int pop_client(int sockfd, client_list *list_of_clients);
+int pop_client(client_node *client, client_list *list_of_clients);
 
 client_node *allocate_client_node(int sockfd);
 
@@ -128,15 +131,20 @@ typedef struct server_
   server_fd_sets sets; /*!< Os fd_sets */
   long listen_port; /*!< A porta de escuta do servidor */
   int listenfd; /*!< O socket de escuta */
+  int l_socket; /*!< Socket de escuta local */
+  char lsocket_name[LSOCKET_NAME]; /*!< Nome do socket local */
   int maxfd_number; /*!< O maior descritor a observar */
   char serv_root[ROOT_LEN]; /*!< O endereco do root do servidor */
   unsigned int velocity; /*!< Velocidade de conexao */
   struct timeval last_burst; /*!< Ultimo inicio de burst */
+  threadpool *thread_pool; /*!< Pool de threads */
 } server;
 
 int analyse_arguments(int argc, const char *argv[], server *r_server);
 
-int create_listen_socket(const server *r_server, int listen_backlog);
+int create_listenfd(const server *r_server);
+
+int create_local_socket(const server *r_server);
 
 int make_connection(server *r_server);
 

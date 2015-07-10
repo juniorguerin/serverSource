@@ -1,13 +1,30 @@
 /*!
  *  \file servidorweb.c
- *  \brief Servidor com soquets nao bloqueantes
+ *  \brief Servidor com I/O nao bloqueante que utiliza estrategia 
+ *  simplificada de token-bucket para controle de velocidade
  */
 
 #include "server.h"
 
+server r_server; 
+
+void sig_handler(int signo)
+{
+  unlink(r_server.lsocket_name);
+  if (r_server.listenfd)
+    close(r_server.listenfd);
+  if (r_server.l_socket)
+    close(r_server.l_socket);
+  threadpool_destroy(r_server.thread_pool);
+
+  fprintf(stderr, "Signal %d", signo);
+  exit(1);
+}
+
 int main(int argc, const char **argv)
 {
-  server r_server;
+  signal(SIGINT, sig_handler);
+  
   init_server(&r_server);
 
   if (0 > analyse_arguments(argc, argv, &r_server))
@@ -16,11 +33,17 @@ int main(int argc, const char **argv)
     return -1;
   }
 
-  if (0 > (r_server.listenfd = create_listen_socket(&r_server,
-          LISTEN_BACKLOG)))
+  if (0 > (r_server.listenfd = create_listenfd(&r_server)) ||
+      0 > (r_server.l_socket = create_local_socket(&r_server)))
   {
     fprintf(stderr, "%s\n", strerror(errno));
-    return -1;
+    goto error;
+  }
+
+  if(!(r_server.thread_pool = threadpool_create(THREAD_NUM)))
+  {
+    fprintf(stderr, "threadpool_create");
+    goto error;
   }
   
   while (1)
@@ -33,7 +56,7 @@ int main(int argc, const char **argv)
                           &r_server.list_of_clients);
     if (!init_sets(&r_server))
     {
-      sleep_diff_burst(&cur_time, &r_server.last_burst, 1);
+      sleep_burst_diff(&cur_time, &r_server.last_burst);
       continue;
     }
 
@@ -44,8 +67,7 @@ int main(int argc, const char **argv)
       if (EINTR == errno)
         continue;
      
-      close(r_server.listenfd);
-      return -1;
+      goto error;
     }
 
     if (FD_ISSET(r_server.listenfd, &r_server.sets.read_s))
@@ -61,7 +83,6 @@ int main(int argc, const char **argv)
     while(cur_client)
     {
       int sockfd;
-
       sockfd = cur_client->sockfd;
 
       if (FD_ISSET(sockfd, &r_server.sets.read_s))
@@ -72,7 +93,7 @@ int main(int argc, const char **argv)
           continue;
         }
 
-        if (cur_client->flags & REQUEST_READ)
+        if (cur_client->status & REQUEST_RECEIVED)
           verify_request(r_server.serv_root, cur_client);
 
         if (0 >= --nready)
@@ -88,7 +109,7 @@ int main(int argc, const char **argv)
           continue;
         }
 
-        if (!(cur_client->flags & REQUEST_READ))
+        if (!(cur_client->status & WRITE_DATA))
         {
           remove_client(&cur_client, &r_server.list_of_clients);
           continue;
@@ -105,7 +126,15 @@ int main(int argc, const char **argv)
     }
   }
 
-  close(r_server.listenfd);
   return 0;
+
+error:
+  unlink(r_server.lsocket_name);
+  if (r_server.listenfd)
+    close(r_server.listenfd);
+  if (r_server.l_socket)
+    close(r_server.l_socket);
+  threadpool_destroy(r_server.thread_pool);
+  return -1;
 }
 
