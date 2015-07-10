@@ -137,10 +137,10 @@ typedef struct server_
   char serv_root[ROOT_LEN]; /*!< O endereco do root do servidor */
   unsigned int velocity; /*!< Velocidade de conexao */
   struct timeval last_burst; /*!< Ultimo inicio de burst */
-  threadpool *thread_pool; /*!< Pool de threads */
+  threadpool thread_pool; /*!< Pool de threads */
 } server;
 
-int analyse_arguments(int argc, const char *argv[], server *r_server);
+int parse_arguments(int argc, const char *argv[], server *r_server);
 
 int create_listenfd(const server *r_server);
 
@@ -148,7 +148,7 @@ int create_local_socket(const server *r_server);
 
 int make_connection(server *r_server);
 
-void init_server(server *r_server);
+int init_server(server *r_server);
 
 int init_sets(server *r_server);
 

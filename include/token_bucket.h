@@ -8,8 +8,12 @@
 
 #include <time.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
+
+#define BURST_U_TIME 1000000
+#define BURST_TIME 1
 
 typedef struct token_bucket_
 {
@@ -27,10 +31,9 @@ void bucket_fill(token_bucket *bucket);
 
 int bucket_verify_tokens(token_bucket *bucket, const unsigned int tokens);
 
-long timeval_subtract(struct timeval *cur_time, 
-                      struct timeval *last_time);
+struct timeval timeval_subtract(const struct timeval *cur_time, 
+                                const struct timeval *last_time);
 
-void sleep_burst_diff(struct timeval *cur_time, 
-                      struct timeval *last_burst);
+struct timeval burst_remain_time(const struct timeval *burst_cur_time);
 
 #endif

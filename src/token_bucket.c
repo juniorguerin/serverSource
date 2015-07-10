@@ -24,7 +24,9 @@ void bucket_init(const unsigned int velocity, token_bucket *bucket)
  * \param[ou] bucket Bucket em questao
  *
  * \return 0 Caso ok
- * \return -1 Caso nao tenha a quantidade de tokens
+ * \return -1 Caso nao tenha os tokens
+ *
+ * \note Verifica se tem a quantidade solicitada de tokens
  */
 int bucket_withdraw(const unsigned int remove_tokens,
                           token_bucket *bucket)
@@ -72,31 +74,53 @@ int bucket_verify_tokens(token_bucket *bucket, unsigned int tokens)
  * \param[in] cur_time Momento mais recente
  * \param[in] last_time Momento anterior
  *
- * \return O tempo em microsegundos
- * \return 0 Caso o tempo anterior seja maior que o recente
+ * \return timeval A diferenca de tempo
  */
-long timeval_subtract(struct timeval *cur_time, 
-                               struct timeval *last_time)
+struct timeval timeval_subtract(const struct timeval *cur_time, 
+                                const struct timeval *last_time)
 {
+  struct timeval timeval_diff;
+  
+  memset(&timeval_diff, 0, sizeof(timeval_diff));
+
   long usec = cur_time->tv_usec - last_time->tv_usec;
   long sec = cur_time->tv_sec - last_time->tv_sec;
-  
-  if (0 > sec)
-    return 0;
 
-  return sec*1000000 + usec; 
+  if (0 > sec)
+    return timeval_diff;
+  
+  if (0 > usec)
+  {
+    sec -= 1;
+    usec = 1000000 + usec;
+  }
+
+  timeval_diff.tv_usec = usec;
+  timeval_diff.tv_sec = sec;
+  return timeval_diff; 
 }
 
-/*! \brief Coloca a thread em sleep pelo restante do tempo de 1s com relação a
- * ultima burst
+/*! \brief Retorna tempo restante para o fim da burst atual
  *
- * \param[in] cur_time Tempo atual
- * \param[in] last_burst Tempo da ultima burst
+ * \param[in] burst_cur_time O tempo atual da burst
+ * \param[out] burst_remain_time O tempo restante para a burst
+ *
+ * \return timeval O tempo restante
+ *
+ * \note Caso o tempo restante seja maior do que a burst, o tempo restante
+ * tera valor igual ao tempo da burst
+ *
  */
-void sleep_burst_diff(struct timeval *cur_time, 
-                      struct timeval *last_burst)
+struct timeval burst_remain_time(const struct timeval *burst_cur_time)
 {
-  long diff_time = timeval_subtract(cur_time,last_burst);
-  unsigned long time_to_sleep = labs(1000000 - diff_time);
-  usleep(time_to_sleep);
+  struct timeval burst_rem_time;
+  memset(&burst_rem_time, 0, sizeof(burst_rem_time));
+
+  if (burst_cur_time->tv_sec < BURST_TIME)
+    burst_rem_time.tv_usec = labs(BURST_U_TIME - 
+                                   burst_cur_time->tv_usec);
+  else
+    burst_rem_time.tv_sec = BURST_TIME;
+
+  return burst_rem_time;
 }

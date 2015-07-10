@@ -6,31 +6,20 @@
 
 #include "server.h"
 
-server r_server; 
-
-void sig_handler(int signo)
-{
-  unlink(r_server.lsocket_name);
-  if (r_server.listenfd)
-    close(r_server.listenfd);
-  if (r_server.l_socket)
-    close(r_server.l_socket);
-  threadpool_destroy(r_server.thread_pool);
-
-  fprintf(stderr, "Signal %d", signo);
-  exit(1);
-}
-
 int main(int argc, const char **argv)
 {
-  signal(SIGINT, sig_handler);
+  server r_server; 
   
-  init_server(&r_server);
+  if (0 > init_server(&r_server))
+  {
+    fprintf(stderr, "init_server");
+    goto error;
+  }
 
-  if (0 > analyse_arguments(argc, argv, &r_server))
+  if (0 > parse_arguments(argc, argv, &r_server))
   {
     fprintf(stderr, "usage: <root> <port> <velocity>\n");
-    return -1;
+    goto error;
   }
 
   if (0 > (r_server.listenfd = create_listenfd(&r_server)) ||
@@ -39,30 +28,22 @@ int main(int argc, const char **argv)
     fprintf(stderr, "%s\n", strerror(errno));
     goto error;
   }
-
-  if(!(r_server.thread_pool = threadpool_create(THREAD_NUM)))
-  {
-    fprintf(stderr, "threadpool_create");
-    goto error;
-  }
-  
+ 
   while (1)
   {
     int nready = 0;
     client_node *cur_client = NULL;
-    struct timeval cur_time;
-  
-    cur_time = burst_init(&r_server.last_burst, 
-                          &r_server.list_of_clients);
-    if (!init_sets(&r_server))
-    {
-      sleep_burst_diff(&cur_time, &r_server.last_burst);
-      continue;
-    }
+    struct timeval burst_cur_time;
+    struct timeval burst_rem_time;
 
+    burst_cur_time = burst_init(&r_server.last_burst, 
+                                &r_server.list_of_clients); 
+    if(!init_sets(&r_server))
+      burst_rem_time = burst_remain_time(&burst_cur_time);
+    
     if (0 > (nready = select(r_server.maxfd_number + 1, 
         &r_server.sets.read_s, &r_server.sets.write_s, 
-        &r_server.sets.except_s, NULL)))
+        &r_server.sets.except_s, &burst_rem_time)))
     {
       if (EINTR == errno)
         continue;
@@ -82,8 +63,7 @@ int main(int argc, const char **argv)
     cur_client = r_server.list_of_clients.head;
     while(cur_client)
     {
-      int sockfd;
-      sockfd = cur_client->sockfd;
+      int sockfd = cur_client->sockfd;
 
       if (FD_ISSET(sockfd, &r_server.sets.read_s))
       {
@@ -109,7 +89,8 @@ int main(int argc, const char **argv)
           continue;
         }
 
-        if (!(cur_client->status & WRITE_DATA))
+        if (!(cur_client->status & WRITE_DATA) &&
+            !(cur_client->status & PENDING_DATA))
         {
           remove_client(&cur_client, &r_server.list_of_clients);
           continue;
@@ -134,7 +115,7 @@ error:
     close(r_server.listenfd);
   if (r_server.l_socket)
     close(r_server.l_socket);
-  threadpool_destroy(r_server.thread_pool);
+  threadpool_destroy(&r_server.thread_pool);
   return -1;
 }
 

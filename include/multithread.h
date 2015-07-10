@@ -42,7 +42,7 @@ typedef struct threadpool_ {
   int queue_size; /*<! Tamanho da queue */
 } threadpool;
 
-threadpool *threadpool_create(int thread_count);
+int threadpool_init(threadpool *pool);
 
 int threadpool_add(void (*function)(void *), void *argument, 
                    threadpool *pool);
