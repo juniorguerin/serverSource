@@ -119,8 +119,6 @@ struct timeval burst_remain_time(const struct timeval *burst_cur_time)
   if (burst_cur_time->tv_sec < BURST_TIME)
     burst_rem_time.tv_usec = labs(BURST_U_TIME - 
                                    burst_cur_time->tv_usec);
-  else
-    burst_rem_time.tv_sec = BURST_TIME;
 
   return burst_rem_time;
 }
