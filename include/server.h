@@ -91,6 +91,7 @@ typedef struct client_node_
   int sockfd; /*!< Socket de conexao */
   char *buffer; /*!< Buffer do cliente */
   int pos_buf; /*!< Posicao da escrita no buffer */
+  int sent_buf; /*!< Posicao de envio no buffer */
   unsigned char status; /*!< Flags para o estado do cliente */
   http_methods method; /*!< Metodo usado na request */
   http_protocols protocol; /*!< Protocolo usado na request */
@@ -163,7 +164,9 @@ int recv_client_msg(client_node *cur_client);
 
 void verify_request(char *serv_root, client_node *cur_client);
 
-int build_response(client_node *cur_client);
+int send_header(client_node *cur_client);
+
+void *read_file(void *cur_client);
 
 int send_response(client_node *cur_client);
 

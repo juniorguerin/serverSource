@@ -122,33 +122,6 @@ static char *http_code_char(const http_code http_code)
   return NULL;
 }
 
-/*! \brief Gera o header da resposta ao cliente
- *
- * \param[in] cliente Estrutura que contem todas as informacoes sobre o cliente
- * e sobre a requisicao feita
- *
- * \return 0 Caso ok
- * \return -1 Caso haja algum erro
- */
-static int create_header(client_node *cur_client)
-{
-  int resp_status = 0;
-  int printf_return = 0;
-  
-  resp_status = cur_client->resp_status;
-
-  printf_return = snprintf(cur_client->buffer, BUFFER_LEN - 1,
-                           "%s %d %s\r\n\r\n", 
-                           supported_protocols[cur_client->protocol], 
-                           resp_status, 
-                           http_code_char(cur_client->resp_status));
-  if (printf_return >= BUFFER_LEN || printf_return < 0)
-    return -1;
-
-  cur_client->pos_buf = printf_return;
-  return 0;
-}
-
 /*! \brief Verifica qual o protocolo da request do cliente
  *
  * \param[in] protocol O protocolo extraido da request do cliente
@@ -197,6 +170,38 @@ static void extr_req_params(client_node *cur_client, char *method,
   
   if (3 != num_read)
     cur_client->resp_status = BAD_REQUEST;
+}
+
+/*! \brief Gera o header da resposta ao cliente
+ *
+ * \param[in] cliente Estrutura que contem todas as informacoes sobre o cliente
+ * e sobre a requisicao feita
+ *
+ * \return 0 Caso ok
+ * \return -1 Caso haja algum erro
+ */
+int send_header(client_node *cur_client)
+{
+  int resp_status = 0;
+  int printf_return = 0;
+  
+  resp_status = cur_client->resp_status;
+
+  printf_return = snprintf(cur_client->buffer, BUFFER_LEN - 1,
+                           "%s %d %s\r\n\r\n", 
+                           supported_protocols[cur_client->protocol], 
+                           resp_status, 
+                           http_code_char(cur_client->resp_status));
+  if (printf_return >= BUFFER_LEN || printf_return < 0)
+    return -1;
+
+  cur_client->pos_buf = printf_return;
+  if (0 != send_response(cur_client))
+    return -1;
+
+  cur_client->status = cur_client->status & (~WRITE_HEADER);
+  cur_client->status = cur_client->status | WRITE_DATA;
+  return 0;
 }
 
 /*! \brief Aloca um novo elemento da estrutura de clientes
@@ -503,8 +508,7 @@ int init_sets(server *r_server)
   for(cur_client = r_server->list_of_clients.head; cur_client; 
       cur_client = cur_client->next)
   {
-    if (!cur_client->bucket.transmission ||
-        !(cur_client->status & (~SIGNAL_OK)))
+    if (!cur_client->bucket.transmission)
       continue;
 
     cur_sockfd = cur_client->sockfd;
@@ -612,51 +616,28 @@ void verify_request(char *serv_root, client_node *cur_client)
   cur_client->status = cur_client->status | WRITE_HEADER;
 }
 
-/*! \brief Funcao que gera a resposta ao cliente e armazena em um buffer
+/*! \brief Funcao que le o arquivo solicitado pelo cliente
  *
- * \param[out] cur_client Estrutura que contem o buffer e informacoes do cliente 
- * (o buffer deve estar inicializado)
+ * \param[out] cur_client Estrutura que contem o buffer e informacoes do 
+ * cliente (o buffer deve estar inicializado)
  *
- * \return 0 Caso OK
- * \return -1 Caso algum erro
  */
-int build_response(client_node *cur_client)
+void *read_file(void *cur_client)
 {
+  client_node *client = (client_node *) cur_client;
   int bytes_read = 0;
-  int bytes_to_read;
-
-  /* Nao ha necessidade de escrever no buffer atual */
-  if (cur_client->status & PENDING_DATA)
-    return 0;
-
-  if (cur_client->status & WRITE_HEADER)
-  {
-    if (0 > create_header(cur_client))
-      return -1;
-
-    cur_client->status = cur_client->status & (~WRITE_HEADER);
-    cur_client->status = cur_client->status | WRITE_DATA;
-  }
-
-  bytes_to_read = BUFFER_LEN - cur_client->pos_buf - 1;
-  if (cur_client->bucket.rate < bytes_to_read)
-    bytes_to_read = cur_client->bucket.rate;
-
-  if (0 > bucket_verify_tokens(&cur_client->bucket, bytes_to_read))
-    return 0;
-  
-  if (OK == cur_client->resp_status)
-    if (0 >= (bytes_read = fread(cur_client->buffer + cur_client->pos_buf,
-                                 sizeof(char), 
-                                 bytes_to_read, 
-                                 cur_client->file)))
-      return -1;
+  int bytes_to_read = BUFFER_LEN - client->pos_buf;
+ 
+  if (0 >= (bytes_read = fread(client->buffer + client->pos_buf,
+                               sizeof(char), 
+                               bytes_to_read, 
+                               client->file)))
 
   if (bytes_read < bytes_to_read)
-    cur_client->status = cur_client->status & (~WRITE_DATA);
+    client->status = client->status & (~WRITE_DATA);
   
-  cur_client->pos_buf += bytes_read;
-  return 0;
+  client->pos_buf += bytes_read;
+  return (NULL);
 }
 
 /*! \brief Manda uma resposta para um cliente conectado atraves de um buffer
@@ -667,26 +648,33 @@ int build_response(client_node *cur_client)
  * \return 0 Caso OK
  * \return -1 Caso haja erro
  */
-int send_response(client_node *cur_client)
+int send_response(client_node *client)
 {
   int sent_bytes;
-  if((sent_bytes = send(cur_client->sockfd, cur_client->buffer, 
-                        cur_client->pos_buf, 
-                        MSG_NOSIGNAL | MSG_DONTWAIT)) < 0)
+  int bytes_to_send;
+  
+  bytes_to_send = BUFFER_LEN - client->pos_buf - 1;
+  if (client->bucket.rate < bytes_to_send)
+    bytes_to_send = client->bucket.rate;
+
+  if (0 > bucket_verify_tokens(&client->bucket, bytes_to_send))
+    return 0;
+
+  if((sent_bytes = send(client->sockfd, client->buffer + client->sent_buf, 
+                        bytes_to_send, MSG_NOSIGNAL | MSG_DONTWAIT)) < 0)
   {
     if (EINTR == errno || EAGAIN == errno || EWOULDBLOCK == errno)
     {
-      cur_client->status = cur_client->status | PENDING_DATA;
+      client->status = client->status | PENDING_DATA;
       return 0;
     }
     
     return -1;
   }
 
-  bucket_withdraw(sent_bytes, &cur_client->bucket);
-  cur_client->status = cur_client->status & (~PENDING_DATA);
- 
-  cur_client->pos_buf = 0;
+  bucket_withdraw(sent_bytes, &client->bucket);
+  client->sent_buf += sent_bytes;
+  client->status = client->status & (~PENDING_DATA); 
   return 0;
 }
 

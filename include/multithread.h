@@ -54,7 +54,7 @@ typedef struct threadpool_ {
 
 int threadpool_init(const char *lsocket_name, threadpool *pool);
 
-int threadpool_add(void (*function)(void *), void *argument, 
+int threadpool_add(void *function(void *), void *argument, 
                    threadpool *pool);
 
 int threadpool_destroy(threadpool *pool);

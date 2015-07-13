@@ -95,11 +95,29 @@ int main(int argc, const char **argv)
      
       if (FD_ISSET(sockfd, &r_server.sets.write_s))
       {
-        if (0 != build_response(cur_client) || 
-            0 != send_response(cur_client))
+        if (cur_client->status & WRITE_HEADER)
+          if (0 != send_header(cur_client))
+          {
+            remove_client(&cur_client, &r_server.list_of_clients);
+            continue;
+          }
+
+        if (cur_client->status & WRITE_DATA)
         {
-          remove_client(&cur_client, &r_server.list_of_clients);
-          continue;
+          if (cur_client->status & SIGNAL_OK)
+            if(0 != send_response(cur_client))
+            {
+              remove_client(&cur_client, &r_server.list_of_clients);
+              continue;
+            }
+
+          if (0 != threadpool_add(read_file, cur_client,
+                                  &r_server.thread_pool) )
+          {
+            remove_client(&cur_client, &r_server.list_of_clients);
+            continue;
+          }
+
         }
 
         if (!(cur_client->status & WRITE_DATA) &&
@@ -108,6 +126,9 @@ int main(int argc, const char **argv)
           remove_client(&cur_client, &r_server.list_of_clients);
           continue;
         }
+        
+        if (0 >= --nready)
+          break;
       }
 
       if (FD_ISSET(sockfd, &r_server.sets.except_s))

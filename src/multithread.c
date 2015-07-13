@@ -33,7 +33,7 @@ static void *threadpool_thread(void *cur_threadpool)
 
     (*(task->function))(task->argument);
 
-    sprintf(signal_str, "%4d %1d", task->cli_sockfd, 
+    sprintf(signal_str, "%d %d", task->cli_sockfd, 
             task->task_status);
     bytes_sent = sendto(pool->l_socket, signal_str, sizeof(char), 0,
                         (struct sockaddr *) &pool->main_t_address,
