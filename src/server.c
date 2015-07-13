@@ -475,6 +475,9 @@ int init_server(server *r_server)
   memset(r_server, 0, sizeof(*r_server));
   strcpy(r_server->lsocket_name, "./server_treinamento");
   r_server->maxfd_number = -1;
+
+  if (0 > threadpool_init(&r_server->thread_pool))
+    return -1;
   
   return 0;
 }

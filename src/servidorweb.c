@@ -22,7 +22,8 @@ int main(int argc, const char **argv)
     goto error;
   }
 
-  if (0 > (r_server.listenfd = create_listenfd(&r_server)))
+  if (0 > (r_server.listenfd = create_listenfd(&r_server)) ||
+      0 > (r_server.l_socket = create_local_socket(&r_server)))
   {
     fprintf(stderr, "%s\n", strerror(errno));
     goto error;
