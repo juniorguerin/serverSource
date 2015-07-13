@@ -33,6 +33,8 @@ static void *threadpool_thread(void *cur_threadpool)
 
     (*(task->function))(task->argument);
 
+    sprintf(signal_str, "%4d %1d", task->cli_sockfd, 
+            task->task_status);
     bytes_sent = sendto(pool->l_socket, signal_str, sizeof(char), 0,
                         (struct sockaddr *) &pool->main_t_address,
                         sizeof(struct sockaddr_un));
@@ -251,5 +253,3 @@ int remove_task_f_list(task_node *node, task_list *queue)
   queue->size--;
   return 0;
 }
-
-    

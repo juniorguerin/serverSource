@@ -50,11 +50,15 @@
 #define STR_METHOD_LEN STR(METHOD_LEN)
 #define STR_RESOURCE_LEN STR(RESOURCE_LEN)
 #define LSOCKET_NAME 64
+#define SIGNAL_MAX 128
+#define SIGNAL_COL 2
 
 #define PENDING_DATA 0x01
 #define REQUEST_RECEIVED 0x02
 #define WRITE_DATA 0x04
 #define WRITE_HEADER 0x08
+#define SIGNAL_OK 0x20
+// 0x10 0x40 0x80
 
 extern const char *supported_methods[];
 typedef enum http_methods_
@@ -138,6 +142,7 @@ typedef struct server_
   unsigned int velocity; /*!< Velocidade de conexao */
   struct timeval last_burst; /*!< Ultimo inicio de burst */
   threadpool thread_pool; /*!< Pool de threads */
+  long signals[SIGNAL_MAX][SIGNAL_COL]; /*!< Vetor de sinalizacao */
 } server;
 
 int parse_arguments(int argc, const char *argv[], server *r_server);
@@ -164,5 +169,9 @@ int send_response(client_node *cur_client);
 
 struct timeval burst_init(struct timeval *last_fill, 
                          const client_list *list_of_clients);
+
+void recv_thread_signals(server *r_server);
+
+void process_thread_signals(server *r_server);
 
 #endif

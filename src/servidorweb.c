@@ -1,8 +1,7 @@
 /*!
  *  \file servidorweb.c
  *  \brief Servidor com I/O nao bloqueante que utiliza estrategia 
- * simplificada de token-bucket para controle de velocidade. I/O de disco e'
- * realizada por threads
+ *  simplificada de token-bucket para controle de velocidade
  */
 
 #include "server.h"
@@ -23,8 +22,7 @@ int main(int argc, const char **argv)
     goto error;
   }
 
-  if (0 > (r_server.listenfd = create_listenfd(&r_server)) ||
-      0 > (r_server.l_socket = create_local_socket(&r_server)))
+  if (0 > (r_server.listenfd = create_listenfd(&r_server)))
   {
     fprintf(stderr, "%s\n", strerror(errno));
     goto error;
@@ -36,6 +34,9 @@ int main(int argc, const char **argv)
     int transmission_flag = 0;
     client_node *cur_client = NULL;
     struct timeval burst_cur_time;
+
+    recv_thread_signals(&r_server);
+    process_thread_signals(&r_server);
 
     burst_cur_time = burst_init(&r_server.last_burst, 
                                 &r_server.list_of_clients); 

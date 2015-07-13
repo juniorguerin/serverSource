@@ -8,6 +8,7 @@
 
 #include <pthread.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -18,6 +19,8 @@
 typedef struct task_node_ {
     void (*function)(void *); /*<! Ponteiro para a funcao da tarefa */
     void *argument; /*<! Argumento passado para a funcao */
+    int cli_sockfd; /*<! Numero do socket do cliente */
+    int task_status; /*<! O status da tarefa */
     struct task_node_ *next; /*<! Proximo elemento da lista */
     struct task_node_ *before; /*<! Elemento anterior */
 } task_node;

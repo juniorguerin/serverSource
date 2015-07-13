@@ -503,7 +503,8 @@ int init_sets(server *r_server)
   for(cur_client = r_server->list_of_clients.head; cur_client; 
       cur_client = cur_client->next)
   {
-    if (!cur_client->bucket.transmission)
+    if (!cur_client->bucket.transmission ||
+        !(cur_client->status & (~SIGNAL_OK)))
       continue;
 
     cur_sockfd = cur_client->sockfd;
@@ -718,4 +719,65 @@ struct timeval burst_init(struct timeval *last_fill,
   }
 
   return burst_cur_time;
+}
+
+/* FAZER */
+void recv_thread_signals(server *r_server)
+{
+  int cont;
+  int b_recv;
+  char signal_str[SIGNAL_LEN];
+  char *endptr = NULL;
+  socklen_t address_len;
+  
+  memset(signal_str, 0, sizeof(signal_str));
+  address_len = sizeof(r_server->thread_pool.main_t_address);
+
+  cont = 0;
+  do 
+  {
+    b_recv = recvfrom(r_server->l_socket, signal_str, SIGNAL_LEN, 0,
+             (struct sockaddr *) &r_server->thread_pool.main_t_address,
+             &address_len);
+
+    if (b_recv <= 0)
+      break;
+
+    /* Armazena o socket e o status da tarefa */
+    r_server->signals[cont][0] = strtol(strtok(signal_str, " "), &endptr,
+                              NUMBER_BASE);
+    r_server->signals[cont][1] = strtol(strtok(NULL, "/0"), &endptr,
+                              NUMBER_BASE);
+  } while (++cont < SIGNAL_MAX);
+}
+
+/* FAZER */
+void process_thread_signals(server *r_server)
+{
+  int cont;
+  client_node *cur_client = NULL;
+
+  cont = 0;
+  while (r_server->signals[cont][0])
+  {
+    int sockfd = r_server->signals[cont][0];
+    int status = r_server->signals[cont][1];
+
+    cur_client = r_server->list_of_clients.head;
+    while (sockfd != cur_client->sockfd && !cur_client)
+      cur_client = cur_client->next;
+
+    if (!cur_client)
+      continue;
+
+    if (status < 0)
+    {
+      remove_client(&cur_client, &r_server->list_of_clients);
+      continue;
+    }
+    else
+      cur_client->status = cur_client->status | SIGNAL_OK;
+
+    cont++;
+  }
 }
