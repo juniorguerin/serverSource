@@ -152,9 +152,9 @@ int init_server(server *r_server);
 
 int init_sets(server *r_server);
 
-int read_client_input(client_node *cur_client);
+int read_client_input(int bytes_to_receive, client_node *cur_client);
 
-int recv_client_msg (client_node *cur_client);
+int recv_client_msg(client_node *cur_client);
 
 void verify_request(char *serv_root, client_node *cur_client);
 

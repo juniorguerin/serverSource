@@ -521,17 +521,17 @@ int init_sets(server *r_server)
 
 /*! \brief Funcao que recebe a mensagem e coloca em um buffer
  *
- * \param[ou] cur_client A estrutura do cliente
+ * \param[in] bytes_to_read Quantidade de bytes a serem lidos
+ * \param[out] cur_client A estrutura do cliente
  *
  * \return -1 Caso erro
  * \return 0 Caso ok
  *
  * \notes E' feito um calloc do buffer
  */
-int read_client_input(client_node *cur_client)
+int read_client_input(int bytes_to_receive, client_node *cur_client)
 {
   int bytes_received = 0;
-  int bytes_to_receive = 0;
 
   if (!cur_client->buffer)
   {
@@ -543,7 +543,6 @@ int read_client_input(client_node *cur_client)
   if (BUFFER_LEN - 1 == cur_client->pos_buf)
     return -1;
 
-  bytes_to_receive = BUFFER_LEN - cur_client->pos_buf - 1;
   if (0 > (bytes_received = recv(cur_client->sockfd, 
            cur_client->buffer + cur_client->pos_buf, 
            bytes_to_receive, MSG_DONTWAIT)))
@@ -565,13 +564,18 @@ int read_client_input(client_node *cur_client)
  * \param[out] cur_client A estrutura de _client
  */
 int recv_client_msg(client_node *cur_client)
-{ 
-  int bytes_to_receive = BUFFER_LEN - cur_client->pos_buf - 1;
+{
+  int bytes_to_receive;
+
+  bytes_to_receive = BUFFER_LEN - cur_client->pos_buf - 1;
+  if (cur_client->bucket.rate < bytes_to_receive)
+    bytes_to_receive = cur_client->bucket.rate;
+  
   if (0 > bucket_verify_tokens(&cur_client->bucket, 
       bytes_to_receive))
     return 0;
 
-  if (0 > read_client_input(cur_client))
+  if (0 > read_client_input(bytes_to_receive, cur_client))
     return -1;
 
   if (!verify_double_line(cur_client->buffer))
@@ -614,10 +618,7 @@ void verify_request(char *serv_root, client_node *cur_client)
 int build_response(client_node *cur_client)
 {
   int bytes_read = 0;
-  int bytes_to_read = 0;
-
-  if (0 > bucket_verify_tokens(&cur_client->bucket, BUFFER_LEN))
-    return 0;
+  int bytes_to_read;
 
   /* Nao ha necessidade de escrever no buffer atual */
   if (cur_client->status & PENDING_DATA)
@@ -632,7 +633,13 @@ int build_response(client_node *cur_client)
     cur_client->status = cur_client->status | WRITE_DATA;
   }
 
-  bytes_to_read = BUFFER_LEN - cur_client->pos_buf;
+  bytes_to_read = BUFFER_LEN - cur_client->pos_buf - 1;
+  if (cur_client->bucket.rate < bytes_to_read)
+    bytes_to_read = cur_client->bucket.rate;
+
+  if (0 > bucket_verify_tokens(&cur_client->bucket, bytes_to_read))
+    return 0;
+  
   if (OK == cur_client->resp_status)
     if (0 >= (bytes_read = fread(cur_client->buffer + cur_client->pos_buf,
                                  sizeof(char), 
@@ -657,12 +664,7 @@ int build_response(client_node *cur_client)
  */
 int send_response(client_node *cur_client)
 {
-  int sent_bytes = 0;
-
-  if (0 > bucket_verify_tokens(&cur_client->bucket, 
-                               cur_client->pos_buf))
-    return 0;
-  
+  int sent_bytes;
   if((sent_bytes = send(cur_client->sockfd, cur_client->buffer, 
                         cur_client->pos_buf, 
                         MSG_NOSIGNAL | MSG_DONTWAIT)) < 0)

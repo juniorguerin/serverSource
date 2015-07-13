@@ -11,7 +11,7 @@
  * \param[in] velocity Velocidade em kb/s
  * \param[out] bucket Bucket em questao
  */
-void bucket_init(const unsigned int velocity, token_bucket *bucket)
+void bucket_init(const int velocity, token_bucket *bucket)
 {
   bucket->rate = velocity * 1024;
   bucket->remain_tokens = bucket->rate;
@@ -25,16 +25,17 @@ void bucket_init(const unsigned int velocity, token_bucket *bucket)
  *
  * \return 0 Caso ok
  * \return -1 Caso nao tenha os tokens
- *
- * \note Verifica se tem a quantidade solicitada de tokens
  */
-int bucket_withdraw(const unsigned int remove_tokens,
+int bucket_withdraw(const int remove_tokens,
                           token_bucket *bucket)
 {
-  if (0 > bucket_verify_tokens(bucket, remove_tokens))
-    return -1;
-
   bucket->remain_tokens -= remove_tokens;
+  if(0 >= bucket->remain_tokens)
+  {
+    bucket->remain_tokens = 0;
+    return -1;
+  }
+
   return 0;
 }
 
@@ -58,7 +59,7 @@ void bucket_fill(token_bucket *bucket)
  *
  * \note Coloca a flag de transmissao como 0 caso nao tenha tokens
  */
-int bucket_verify_tokens(token_bucket *bucket, unsigned int tokens)
+int bucket_verify_tokens(token_bucket *bucket, int tokens)
 {
   if (bucket->remain_tokens < tokens)
   {
