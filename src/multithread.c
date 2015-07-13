@@ -11,6 +11,8 @@
  */
 static void *threadpool_thread(void *cur_threadpool)
 {
+  int bytes_sent;
+  char signal_str[SIGNAL_LEN];
   threadpool *pool = (threadpool *) cur_threadpool;
   task_node *task = NULL;
 
@@ -31,9 +33,10 @@ static void *threadpool_thread(void *cur_threadpool)
 
     (*(task->function))(task->argument);
 
-    // quando a funcao terminar, comunica com um socket a thread 
-    // principal (analisar)
-    
+    bytes_sent = sendto(pool->l_socket, signal_str, sizeof(char), 0,
+                        (struct sockaddr *) &pool->main_t_address,
+                        sizeof(struct sockaddr_un));
+
     free_task_node(task);
   }
   
@@ -44,12 +47,13 @@ static void *threadpool_thread(void *cur_threadpool)
 
 /*! \brief Funcao que inicia um pool de threads que ja esteja alocado
  *
- * \param[in] pool O pool a ser iniciado
+ * \param[in] lsocket_name O nome do socket local da thread principal
+ * \param[out] pool O pool a ser iniciado
  *
  * \return -1 Caso haja erro
  * \return 0 Caso ok
  */
-int threadpool_init(threadpool *pool)
+int threadpool_init(const char *lsocket_name, threadpool *pool) 
 {
   int i;
 
@@ -57,7 +61,14 @@ int threadpool_init(threadpool *pool)
     return -1;
 
   pool->threads = (pthread_t *) calloc(THREAD_NUM, sizeof(pthread_t));
-  pool->queue = (task_list *) calloc (1, sizeof(task_list));
+  pool->queue = (task_list *) calloc(1, sizeof(task_list));
+
+  if (0 > (pool->l_socket = socket(AF_UNIX, SOCK_DGRAM, 0)))
+    return -1;
+
+  memset(&pool->main_t_address, 0, sizeof(pool->main_t_address));
+  pool->main_t_address.sun_family = AF_UNIX;
+  strcpy(pool->main_t_address.sun_path, lsocket_name);
 
   if (pthread_mutex_init(&(pool->lock), NULL) ||
       pthread_cond_init(&(pool->notify), NULL) ||

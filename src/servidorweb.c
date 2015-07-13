@@ -1,7 +1,8 @@
 /*!
  *  \file servidorweb.c
  *  \brief Servidor com I/O nao bloqueante que utiliza estrategia 
- *  simplificada de token-bucket para controle de velocidade
+ * simplificada de token-bucket para controle de velocidade. I/O de disco e'
+ * realizada por threads
  */
 
 #include "server.h"

@@ -9,8 +9,11 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 #define THREAD_NUM 4
+#define SIGNAL_LEN 4
 
 typedef struct task_node_ {
     void (*function)(void *); /*<! Ponteiro para a funcao da tarefa */
@@ -40,9 +43,13 @@ typedef struct threadpool_ {
   int shut_down; /*<! Flag para encerramento */
   int thread_count; /*<! Numero de threads */
   int queue_size; /*<! Tamanho da queue */
+  int l_socket; /*<! Socket local */
+  struct sockaddr_un main_t_address; /*<! Socket local thread
+                                      * principal
+                                      */
 } threadpool;
 
-int threadpool_init(threadpool *pool);
+int threadpool_init(const char *lsocket_name, threadpool *pool);
 
 int threadpool_add(void (*function)(void *), void *argument, 
                    threadpool *pool);
