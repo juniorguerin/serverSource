@@ -19,8 +19,6 @@
 typedef struct task_node_ {
     void (*function)(void *); /*<! Ponteiro para a funcao da tarefa */
     void *argument; /*<! Argumento passado para a funcao */
-    int cli_sockfd; /*<! Numero do socket do cliente */
-    int task_status; /*<! O status da tarefa */
     struct task_node_ *next; /*<! Proximo elemento da lista */
     struct task_node_ *before; /*<! Elemento anterior */
 } task_node;
@@ -52,9 +50,19 @@ typedef struct threadpool_ {
                                       */
 } threadpool;
 
+typedef struct io_args_
+{
+  int sockfd;
+  char *buffer;
+  int b_to_transfer;
+  int b_transferred;
+  int task_status;
+  FILE *file;
+} io_args;
+
 int threadpool_init(const char *lsocket_name, threadpool *pool);
 
-int threadpool_add(void *function(void *), void *argument, 
+int threadpool_add(void (*function)(void *), void *argument, 
                    threadpool *pool);
 
 int threadpool_destroy(threadpool *pool);

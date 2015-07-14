@@ -172,19 +172,23 @@ static void extr_req_params(client_node *cur_client, char *method,
     cur_client->resp_status = BAD_REQUEST;
 }
 
-/*! \brief Gera o header da resposta ao cliente
+/*! \brief Gera o header da resposta ao cliente se for necessario
  *
  * \param[in] cliente Estrutura que contem todas as informacoes sobre o cliente
  * e sobre a requisicao feita
  *
  * \return 0 Caso ok
- * \return -1 Caso haja algum erro
+ * \return -1 Caso haja algum erro ou seja status de erro na resposta
  */
 int send_header(client_node *cur_client)
 {
   int resp_status = 0;
   int printf_return = 0;
-  
+
+  /* Nao e necessario gerar o header */
+  if (!(cur_client->status & WRITE_HEADER))
+    return 0;
+
   resp_status = cur_client->resp_status;
 
   printf_return = snprintf(cur_client->buffer, BUFFER_LEN - 1,
@@ -197,6 +201,9 @@ int send_header(client_node *cur_client)
 
   cur_client->pos_buf = printf_return;
   if (0 != send_response(cur_client))
+    return -1;
+
+  if (cur_client->resp_status != OK)
     return -1;
 
   cur_client->status = cur_client->status & (~WRITE_HEADER);
@@ -371,14 +378,12 @@ error:
   return -1;
 }
 
-/*! \brief Cria o socket local
- *
- * \param[in] r_server Estrutura do servidor
+/*! \brief Cria o socket local com base no nome guardado em um define
  *
  * \return -1 Caso ocorra algum erro
  * \return local_listen_socket Caso esteja ok
  */
-int create_local_socket(const server *r_server)
+int create_local_socket()
 {
   struct sockaddr_un servaddr;
   int l_socket;
@@ -388,9 +393,9 @@ int create_local_socket(const server *r_server)
   
   bzero(&servaddr, sizeof(servaddr));
   servaddr.sun_family = AF_UNIX;
-  strncpy(servaddr.sun_path, r_server->lsocket_name, LSOCKET_NAME - 1);
+  strcpy(servaddr.sun_path, LSOCK_NAME);
 
-  unlink(r_server->lsocket_name);
+  unlink(LSOCK_NAME);
   if (0 > bind(l_socket, (struct sockaddr *)&servaddr, 
                sizeof(servaddr)))
     goto error;
@@ -478,11 +483,9 @@ int remove_client(client_node **cur_client,
 int init_server(server *r_server)
 {
   memset(r_server, 0, sizeof(*r_server));
-  strcpy(r_server->lsocket_name, "./server_treinamento");
   r_server->maxfd_number = -1;
 
-  if (0 > threadpool_init(r_server->lsocket_name, 
-                          &r_server->thread_pool))
+  if (0 > threadpool_init(LSOCK_NAME, &r_server->thread_pool))
     return -1;
   
   return 0;
@@ -514,10 +517,10 @@ int init_sets(server *r_server)
     cur_sockfd = cur_client->sockfd;
     r_server->maxfd_number = MAX(cur_sockfd, r_server->maxfd_number);
     
-    if ((cur_client->status & WRITE_HEADER) || 
-        (cur_client->status & WRITE_DATA))
+    if (cur_client->status & WRITE_HEADER || 
+        cur_client->status & WRITE_DATA)
       FD_SET(cur_sockfd, &r_server->sets.write_s);
-    else
+    else if(!(cur_client->status & SIGNAL_READY))
       FD_SET(cur_sockfd, &r_server->sets.read_s);
 
     FD_SET(cur_sockfd, &r_server->sets.except_s);
@@ -578,7 +581,7 @@ int recv_client_msg(client_node *cur_client)
 
   bytes_to_receive = BUFFER_LEN - cur_client->pos_buf - 1;
   if (cur_client->bucket.rate < bytes_to_receive)
-    bytes_to_receive = cur_client->bucket.rate;
+    bytes_to_receive = cur_client->bucket.remain_tokens;
   
   if (0 > bucket_verify_tokens(&cur_client->bucket, 
       bytes_to_receive))
@@ -618,30 +621,61 @@ void verify_request(char *serv_root, client_node *cur_client)
 
 /*! \brief Funcao que le o arquivo solicitado pelo cliente
  *
- * \param[out] cur_client Estrutura que contem o buffer e informacoes do 
- * cliente (o buffer deve estar inicializado)
+ * \param[out] task Task com informacoes do cliente como argumento 
  *
  */
-void *read_file(void *cur_client)
+void read_file(void *c_args)
 {
-  client_node *client = (client_node *) cur_client;
-  int bytes_read = 0;
-  int bytes_to_read = BUFFER_LEN - client->pos_buf;
+  io_args *args = (io_args *) c_args;
+  int bytes_read;
  
-  if (0 >= (bytes_read = fread(client->buffer + client->pos_buf,
+  if (0 >= (bytes_read = fread(args->buffer,
                                sizeof(char), 
-                               bytes_to_read, 
-                               client->file)))
-
-  if (bytes_read < bytes_to_read)
-    client->status = client->status & (~WRITE_DATA);
-  
-  client->pos_buf += bytes_read;
-  return (NULL);
+                               args->b_to_transfer, 
+                               args->file)))
+    args->task_status = -1;
+  else
+  { 
+    args->b_transferred = bytes_read;
+    args->task_status = 1;
+  }
 }
 
-/*! \brief Manda uma resposta para um cliente conectado atraves de um buffer
- * armazenado
+/* FAZER */
+int process_read_file(client_node *client, threadpool *pool)
+{
+  io_args args;
+  int bytes_to_read; 
+
+  if (!client->bucket.transmission || 
+      client->status & PENDING_DATA ||
+      !(client->status & WRITE_DATA))
+    return 0;
+  
+  if (BUFFER_LEN <= client->bucket.remain_tokens) 
+    bytes_to_read = BUFFER_LEN;
+  else
+    bytes_to_read = client->bucket.remain_tokens;
+  
+  if (!(client->status & PENDING_DATA))
+  {
+    args.file = client->file;
+    args.buffer = client->buffer;
+    args.sockfd = client->sockfd;
+    args.b_to_transfer = bytes_to_read;
+
+    client->status = client->status | SIGNAL_READY;
+    
+    if(0 != threadpool_add(read_file, &args, pool))
+      return -1;
+    else
+      return 0;
+  }
+
+  return 0;
+}
+
+/*! \brief Manda uma resposta armazenada em um buffer  para um cliente
  *
  * \param[in] cur_client Variavel que armazena informacoes do cliente
  *
@@ -650,18 +684,14 @@ void *read_file(void *cur_client)
  */
 int send_response(client_node *client)
 {
-  int sent_bytes;
-  int bytes_to_send;
-  
-  bytes_to_send = BUFFER_LEN - client->pos_buf - 1;
-  if (client->bucket.rate < bytes_to_send)
-    bytes_to_send = client->bucket.rate;
+  int b_sent;
 
-  if (0 > bucket_verify_tokens(&client->bucket, bytes_to_send))
+  if (!(client->status & SIGNAL_READY) && client->status & WRITE_DATA)
     return 0;
 
-  if((sent_bytes = send(client->sockfd, client->buffer + client->sent_buf, 
-                        bytes_to_send, MSG_NOSIGNAL | MSG_DONTWAIT)) < 0)
+  if(0 > (b_sent = send(client->sockfd, client->buffer, 
+                        client->pos_buf, MSG_NOSIGNAL | 
+                        MSG_DONTWAIT)))
   {
     if (EINTR == errno || EAGAIN == errno || EWOULDBLOCK == errno)
     {
@@ -672,9 +702,10 @@ int send_response(client_node *client)
     return -1;
   }
 
-  bucket_withdraw(sent_bytes, &client->bucket);
-  client->sent_buf += sent_bytes;
-  client->status = client->status & (~PENDING_DATA); 
+  bucket_withdraw(b_sent, &client->bucket);
+  client->status = client->status & (~PENDING_DATA);
+  client->status = client->status & (~WRITE_DATA);
+  client->pos_buf = 0;
   return 0;
 }
 
@@ -719,14 +750,16 @@ void recv_thread_signals(server *r_server)
   socklen_t address_len;
   
   memset(signal_str, 0, sizeof(signal_str));
+  memset(r_server->signals, 0, sizeof(r_server->signals));
   address_len = sizeof(r_server->thread_pool.main_t_address);
 
-  cont = 0;
-  do 
+  cont = -1;
+  while (++cont < SIGNAL_MAX)
   {
-    b_recv = recvfrom(r_server->l_socket, signal_str, SIGNAL_LEN, 0,
-             (struct sockaddr *) &r_server->thread_pool.main_t_address,
-             &address_len);
+    b_recv = recvfrom(r_server->l_socket, signal_str, SIGNAL_LEN,
+                      MSG_DONTWAIT, (struct sockaddr *) 
+                      &r_server->thread_pool.main_t_address,
+                      &address_len);
 
     if (b_recv <= 0)
       break;
@@ -736,7 +769,7 @@ void recv_thread_signals(server *r_server)
                               NUMBER_BASE);
     r_server->signals[cont][1] = strtol(strtok(NULL, "/0"), &endptr,
                               NUMBER_BASE);
-  } while (++cont < SIGNAL_MAX);
+  }
 }
 
 /* FAZER */
@@ -746,7 +779,7 @@ void process_thread_signals(server *r_server)
   client_node *cur_client = NULL;
 
   cont = 0;
-  while (r_server->signals[cont][0])
+  while (r_server->signals[cont][0] != 0)
   {
     int sockfd = r_server->signals[cont][0];
     int status = r_server->signals[cont][1];
@@ -759,12 +792,9 @@ void process_thread_signals(server *r_server)
       continue;
 
     if (status < 0)
-    {
       remove_client(&cur_client, &r_server->list_of_clients);
-      continue;
-    }
     else
-      cur_client->status = cur_client->status | SIGNAL_OK;
+      cur_client->status = cur_client->status | WRITE_DATA;
 
     cont++;
   }

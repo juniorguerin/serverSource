@@ -49,16 +49,17 @@
 #define STR_PROTOCOL_LEN STR(PROTOCOL_LEN)
 #define STR_METHOD_LEN STR(METHOD_LEN)
 #define STR_RESOURCE_LEN STR(RESOURCE_LEN)
-#define LSOCKET_NAME 64
 #define SIGNAL_MAX 128
 #define SIGNAL_COL 2
+#define LSOCK_NAME "./server_treinamento"
+#define LSOCK_NAME_LEN 64
 
 #define PENDING_DATA 0x01
 #define REQUEST_RECEIVED 0x02
 #define WRITE_DATA 0x04
 #define WRITE_HEADER 0x08
-#define SIGNAL_OK 0x20
-// 0x10 0x40 0x80
+#define SIGNAL_READY 0x10
+// 0x20 0x40 0x80
 
 extern const char *supported_methods[];
 typedef enum http_methods_
@@ -137,7 +138,6 @@ typedef struct server_
   long listen_port; /*!< A porta de escuta do servidor */
   int listenfd; /*!< O socket de escuta */
   int l_socket; /*!< Socket de escuta local */
-  char lsocket_name[LSOCKET_NAME]; /*!< Nome do socket local */
   int maxfd_number; /*!< O maior descritor a observar */
   char serv_root[ROOT_LEN]; /*!< O endereco do root do servidor */
   unsigned int velocity; /*!< Velocidade de conexao */
@@ -150,7 +150,7 @@ int parse_arguments(int argc, const char *argv[], server *r_server);
 
 int create_listenfd(const server *r_server);
 
-int create_local_socket(const server *r_server);
+int create_local_socket();
 
 int make_connection(server *r_server);
 
@@ -166,15 +166,17 @@ void verify_request(char *serv_root, client_node *cur_client);
 
 int send_header(client_node *cur_client);
 
-void *read_file(void *cur_client);
+void read_file(void *cur_task);
 
 int send_response(client_node *cur_client);
 
 struct timeval burst_init(struct timeval *last_fill, 
-                         const client_list *list_of_clients);
+                          const client_list *list_of_clients);
 
 void recv_thread_signals(server *r_server);
 
 void process_thread_signals(server *r_server);
+
+int process_read_file(client_node *client, threadpool *pool);
 
 #endif

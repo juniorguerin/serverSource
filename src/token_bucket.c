@@ -32,6 +32,7 @@ int bucket_withdraw(const int remove_tokens,
   bucket->remain_tokens -= remove_tokens;
   if(0 >= bucket->remain_tokens)
   {
+    bucket->transmission = 0;
     bucket->remain_tokens = 0;
     return -1;
   }

@@ -19,7 +19,7 @@ typedef struct token_bucket_
 {
   int rate; /*!< Tokens adicionados em milisegundos */
   int remain_tokens; /*!< Numero atual de tokens */
-  int transmission:1; /*!< Flag para transmissao */
+  int transmission; /*!< Flag para transmissao */
 } token_bucket;
 
 void bucket_init(const int velocity, token_bucket *bucket);

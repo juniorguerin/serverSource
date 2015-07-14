@@ -22,7 +22,8 @@ int main(int argc, const char **argv)
     goto error;
   }
 
-  if (0 > (r_server.listenfd = create_listenfd(&r_server)))
+  if (0 > (r_server.listenfd = create_listenfd(&r_server)) ||
+      0 > (r_server.l_socket = create_local_socket()))
   {
     fprintf(stderr, "%s\n", strerror(errno));
     goto error;
@@ -95,38 +96,24 @@ int main(int argc, const char **argv)
      
       if (FD_ISSET(sockfd, &r_server.sets.write_s))
       {
-        if (cur_client->status & WRITE_HEADER)
-          if (0 != send_header(cur_client))
-          {
-            remove_client(&cur_client, &r_server.list_of_clients);
-            continue;
-          }
-
-        if (cur_client->status & WRITE_DATA)
-        {
-          if (cur_client->status & SIGNAL_OK)
-            if(0 != send_response(cur_client))
-            {
-              remove_client(&cur_client, &r_server.list_of_clients);
-              continue;
-            }
-
-          if (0 != threadpool_add(read_file, cur_client,
-                                  &r_server.thread_pool) )
-          {
-            remove_client(&cur_client, &r_server.list_of_clients);
-            continue;
-          }
-
-        }
-
-        if (!(cur_client->status & WRITE_DATA) &&
-            !(cur_client->status & PENDING_DATA))
+        if (0 != send_header(cur_client))
         {
           remove_client(&cur_client, &r_server.list_of_clients);
           continue;
         }
-        
+
+        if(0 != send_response(cur_client))
+        {
+          remove_client(&cur_client, &r_server.list_of_clients);
+          continue;
+        }
+
+        if (0 != process_read_file(cur_client, &r_server.thread_pool))
+        {
+          remove_client(&cur_client, &r_server.list_of_clients);
+          continue;
+        }
+
         if (0 >= --nready)
           break;
       }
@@ -144,7 +131,7 @@ int main(int argc, const char **argv)
   return 0;
 
 error:
-  unlink(r_server.lsocket_name);
+  unlink(LSOCK_NAME);
   if (r_server.listenfd)
     close(r_server.listenfd);
   if (r_server.l_socket)
@@ -152,4 +139,3 @@ error:
   threadpool_destroy(&r_server.thread_pool);
   return -1;
 }
-
