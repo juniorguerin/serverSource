@@ -45,19 +45,17 @@ typedef struct threadpool_ {
   int thread_count; /*<! Numero de threads */
   int queue_size; /*<! Tamanho da queue */
   int l_socket; /*<! Socket local */
-  struct sockaddr_un main_t_address; /*<! Socket local thread
-                                      * principal
-                                      */
+  struct sockaddr_un main_t_address; /*<! Endereco thread principal */
 } threadpool;
 
 typedef struct io_args_
 {
-  int sockfd;
-  char *buffer;
-  int b_to_transfer;
-  int b_transferred;
-  int task_status;
-  FILE *file;
+  int sockfd; /*<! Socket do cliente */
+  char *buffer; /*<! Buffer a ser escrito / lido */
+  int b_to_transfer; /*<! Bytes a transferir */
+  int b_transferred; /*<! Bytes transferidos */
+  int task_status; /*<! Status da tarefa */
+  FILE *file; /*<! Arquivo a ser lido / escrito */
 } io_args;
 
 int threadpool_init(const char *lsocket_name, threadpool *pool);

@@ -201,11 +201,6 @@ int send_header(client_node *cur_client)
     return -1;
 
   cur_client->pos_buf = printf_return;
-  if (0 != send_response(cur_client))
-    return -1;
-
-  if (cur_client->resp_status != OK)
-    return -1;
 
   return 0;
 }
@@ -248,41 +243,41 @@ void free_client_node(client_node *client)
  * \param[in] client O cliente a ser adicionado
  * \param[out] cli_list O primeiro elemento da lista
  */
-void append_client(client_node *client, client_list *list_of_clients)
+void append_client(client_node *client, client_list *l_clients)
 {
   client_node *last_client = NULL;
 
-  if (!list_of_clients->head)
+  if (!l_clients->head)
   {
-    list_of_clients->head = client;
-    list_of_clients->size++;
+    l_clients->head = client;
+    l_clients->size++;
   }
   else
   {
-    for (last_client = list_of_clients->head; last_client->next; 
+    for (last_client = l_clients->head; last_client->next; 
          last_client = last_client->next)
       ;
     last_client->next = client;
     client->before = last_client;
-    list_of_clients->size++;
+    l_clients->size++;
   }
 }
 
 /*! \brief Elimina referencia de um elemento dentro da lsita
  *
  * \param[in] sockfd O socket do cliente a ser removido
- * \param[out] list_of_clients A lista de clientes
+ * \param[out] l_clients A lista de clientes
  *
  * \return -1 Caso ocorra algum erro
  * \return 0 Caso ok
  */
-int pop_client(client_node *client, client_list *list_of_clients)
+int pop_client(client_node *client, client_list *l_clients)
 {
-  if (!client || !list_of_clients->size)
+  if (!client || !l_clients->size)
     return -1;
 
-  if (client == list_of_clients->head)
-    list_of_clients->head = client->next;
+  if (client == l_clients->head)
+    l_clients->head = client->next;
   else
   {
     if (client->next)
@@ -292,7 +287,7 @@ int pop_client(client_node *client, client_list *list_of_clients)
       client->before->next = client->next;
   }
  
-  list_of_clients->size--;
+  l_clients->size--;
   return 0;
 }
 
@@ -424,7 +419,7 @@ int make_connection(server *r_server)
   client_node *new_client = NULL;
  
   /* Select nao pode monitoras sockets alem de FD_SETSIZE */
-  if (FD_SETSIZE == r_server->list_of_clients.size)
+  if (FD_SETSIZE == r_server->l_clients.size)
     return -1;
 
   connfd = accept(r_server->listenfd, (struct sockaddr *) &cliaddr, 
@@ -438,7 +433,7 @@ int make_connection(server *r_server)
     return -1;
   }
 
-  append_client(new_client, &r_server->list_of_clients);
+  append_client(new_client, &r_server->l_clients);
   bucket_init(r_server->velocity, &new_client->bucket);
   r_server->maxfd_number = MAX(connfd, r_server->maxfd_number);
 
@@ -448,7 +443,7 @@ int make_connection(server *r_server)
 /*! \brief Remove um cliente da lista (fecha a conexao) 
  *
  * \param[out] cur_cli Endereco do cliente atual da lista
- * \param[out] list_of_clients Lista de clientes
+ * \param[out] l_clients Lista de clientes
  *
  * \return -1 Caso haja erro
  * \return 0 Caso OK
@@ -456,7 +451,7 @@ int make_connection(server *r_server)
  * \note Avança ao proximo cliente com o primeiro parametro
  */
 int remove_client(client_node **cur_client, 
-                  client_list *list_of_clients) 
+                  client_list *l_clients) 
 {
   client_node *client_remove = NULL;
   
@@ -464,7 +459,7 @@ int remove_client(client_node **cur_client,
   client_remove = *cur_client;
   *cur_client = (*cur_client)->next;
 
-  if(0 > pop_client(client_remove, list_of_clients))
+  if(0 > pop_client(client_remove, l_clients))
     return -1;
   
   free_client_node(client_remove);
@@ -507,7 +502,7 @@ int init_sets(server *r_server)
   FD_SET(r_server->listenfd, &r_server->sets.read_s);
   r_server->maxfd_number = r_server->listenfd;
 
-  for(cur_client = r_server->list_of_clients.head; cur_client; 
+  for(cur_client = r_server->l_clients.head; cur_client; 
       cur_client = cur_client->next)
   {
     if (!cur_client->bucket.transmission)
@@ -582,10 +577,6 @@ int recv_client_msg(client_node *cur_client)
   if (cur_client->bucket.rate < bytes_to_receive)
     bytes_to_receive = cur_client->bucket.remain_tokens;
   
-  if (0 > bucket_verify_tokens(&cur_client->bucket, 
-      bytes_to_receive))
-    return 0;
-
   if (0 > read_client_input(bytes_to_receive, cur_client))
     return -1;
 
@@ -640,8 +631,16 @@ void read_file(void *c_args)
   }
 }
 
-/* FAZER */
-int process_read_file(client_node *client, threadpool *pool)
+/* \brief Realiza verificacoes para a leitura do arquivo e coloca a tarefa no
+ * pool de threads
+ *
+ * \param[out] client O cliente correspondente
+ * \param[out] r_server A estrutura do servidor
+ *
+ * \return 0 Caso ok
+ * \return -1 Caso haja erro ao colocar a tarefa para as threads
+ */
+int process_read_file(client_node *client, server *r_server)
 {
   io_args args;
   int bytes_to_read; 
@@ -655,21 +654,15 @@ int process_read_file(client_node *client, threadpool *pool)
   else
     bytes_to_read = client->bucket.remain_tokens;
   
-  if (!(client->status & PENDING_DATA))
-  {
-    args.file = client->file;
-    args.buffer = client->buffer;
-    args.sockfd = client->sockfd;
-    args.b_to_transfer = bytes_to_read;
+  args.file = client->file;
+  args.buffer = client->buffer;
+  args.sockfd = client->sockfd;
+  args.b_to_transfer = bytes_to_read;
 
-    client->status = client->status | SIGNAL_READY;
-    
-    if(0 != threadpool_add(read_file, &args, pool))
-      return -1;
-    else
-      return 0;
-  }
+  if(0 != threadpool_add(read_file, &args, &r_server->thread_pool))
+    return -1;
 
+  r_server->wait_signal++;
   return 0;
 }
 
@@ -724,12 +717,12 @@ int send_response(client_node *client)
 /*! \brief Recarrega todos os buckets a cada 1 segundo
  *
  * \param[in] last_fill O momento da ultima recarga de tokens
- * \param[in] list_of_clients Lista de clientes
+ * \param[in] l_clients Lista de clientes
  *
  * \return Tempo atual da burst em questao
  */
 struct timeval burst_init(struct timeval *last_fill, 
-               const client_list *list_of_clients)
+               const client_list *l_clients)
 {
   struct timeval cur_time;
   struct timeval burst_cur_time;
@@ -744,7 +737,7 @@ struct timeval burst_init(struct timeval *last_fill,
     *last_fill = cur_time;
     memset(&burst_cur_time, 0, sizeof(burst_cur_time));
 
-    for(cur_client = list_of_clients->head; cur_client; 
+    for(cur_client = l_clients->head; cur_client; 
         cur_client = cur_client->next)  
       bucket_fill(&cur_client->bucket);
   }
@@ -752,7 +745,11 @@ struct timeval burst_init(struct timeval *last_fill,
   return burst_cur_time;
 }
 
-/* FAZER */
+/*! \brief Recebe as mensagens de servico das threads
+ *
+ * \param[out] r_server A estrutura do servidor
+ *
+ */
 void recv_thread_signals(server *r_server)
 {
   int cont;
@@ -781,10 +778,17 @@ void recv_thread_signals(server *r_server)
                               NUMBER_BASE);
     r_server->signals[cont][1] = strtol(strtok(NULL, "/0"), &endptr,
                               NUMBER_BASE);
+
+    r_server->wait_signal--;
   }
 }
 
-/* FAZER */
+/*! \brief Interpreta a resposta de servido das threads e, caso
+ * necessario, fecha a conexao com o cliente
+ *
+ * \param[out] r_server A estrutura do servidor
+ *
+ */
 void process_thread_signals(server *r_server)
 {
   int cont;
@@ -796,7 +800,7 @@ void process_thread_signals(server *r_server)
     int sockfd = r_server->signals[cont][0];
     int status = r_server->signals[cont][1];
 
-    cur_client = r_server->list_of_clients.head;
+    cur_client = r_server->l_clients.head;
     while (sockfd != cur_client->sockfd && !cur_client)
       cur_client = cur_client->next;
 
@@ -804,10 +808,68 @@ void process_thread_signals(server *r_server)
       continue;
 
     if (status < 0)
-      remove_client(&cur_client, &r_server->list_of_clients);
+      remove_client(&cur_client, &r_server->l_clients);
     else
+    {
       cur_client->status = cur_client->status | WRITE_DATA;
+      cur_client->status = cur_client->status | SIGNAL_READY;
+    }
 
     cont++;
   }
+}
+
+/*! \brief Contem analises e tarefas necessarias ao inicio de cada laco do
+ * select: analise de sinalizacao das threads, calculo dos tempos de burst,
+ * e inicializacao dos conjuntos de descritores
+ *
+ * \param[out] r_server A estrutura do servidor
+ *
+ * \return 0 Caso ok
+ * \return -1 Caso haja erro no select
+ */
+int select_analysis(server *r_server)
+{
+  int nready = 0;
+  int transmission_flag = 0;
+  struct timeval *timeout;
+  struct timeval burst_cur_time;
+  struct timeval burst_rem_time;
+  struct timeval timeout_ref;
+
+  /* Tempo de espera por sinalizacao */
+  timeout_ref.tv_sec = 0;
+  timeout_ref.tv_usec = 10000;
+
+  while (!nready)
+  {
+    timeout = NULL;
+    burst_cur_time = burst_init(&r_server->last_burst,
+                                &r_server->l_clients);  
+    
+    if (r_server->l_clients.size)
+    {
+      burst_rem_time = burst_remain_time(&burst_cur_time); 
+      if (0 == burst_rem_time.tv_usec)
+        continue;
+
+      if (0 < r_server->wait_signal)
+      {
+        recv_thread_signals(r_server);
+        process_thread_signals(r_server);
+
+        if (0 < r_server->wait_signal)
+          timeout = &timeout_ref;
+      }
+      else
+        timeout = &burst_rem_time;
+    }
+
+    init_sets(r_server); 
+    nready = select(r_server->maxfd_number + 1, &r_server->sets.read_s,
+                    &r_server->sets.write_s, &r_server->sets.except_s,
+                    timeout);
+  }
+ 
+ return nready;
 }

@@ -31,33 +31,14 @@ int main(int argc, const char **argv)
  
   while (1)
   {
-    int nready = 0;
-    int transmission_flag = 0;
     client_node *cur_client = NULL;
-    struct timeval *select_timeout = NULL;
-    struct timeval burst_cur_time;
-
-    recv_thread_signals(&r_server);
-    process_thread_signals(&r_server);
-
-    burst_cur_time = burst_init(&r_server.last_burst,
-                                &r_server.list_of_clients); 
+    int nready;
     
-    transmission_flag = init_sets(&r_server);
-    if (r_server.list_of_clients.size && !transmission_flag)
-    {
-      struct timeval burst_rem_time = burst_remain_time(&burst_cur_time);
-      select_timeout = &burst_rem_time;
-    }
-      
-    nready = select(r_server.maxfd_number + 1, &r_server.sets.read_s,
-                    &r_server.sets.write_s, &r_server.sets.except_s,
-                    select_timeout); 
-    if (0 > nready)
-    {
+    if(0 > (nready = select_analysis(&r_server)))
+    {  
       if (EINTR == errno)
         continue;
-     
+
       goto error;
     }
 
@@ -70,10 +51,7 @@ int main(int argc, const char **argv)
         continue;
     }
 
-    if (!transmission_flag)
-      continue;
-
-    cur_client = r_server.list_of_clients.head;
+    cur_client = r_server.l_clients.head;
     while(cur_client)
     {
       int sockfd = cur_client->sockfd;
@@ -82,7 +60,7 @@ int main(int argc, const char **argv)
       {
         if (0 > recv_client_msg(cur_client))
         {
-          remove_client(&cur_client, &r_server.list_of_clients);
+          remove_client(&cur_client, &r_server.l_clients);
           continue;
         }
 
@@ -96,10 +74,16 @@ int main(int argc, const char **argv)
       if (FD_ISSET(sockfd, &r_server.sets.write_s))
       {
         if (0 != send_header(cur_client) ||
-            0 != process_read_file(cur_client, &r_server.thread_pool) ||
-            0 != send_response(cur_client))
+            0 != send_response(cur_client) ||
+            0 != process_read_file(cur_client, &r_server))
         {
-          remove_client(&cur_client, &r_server.list_of_clients);
+          remove_client(&cur_client, &r_server.l_clients);
+          continue;
+        }
+
+        if (cur_client->status & FINISHED)
+        {
+          remove_client(&cur_client, &r_server.l_clients);
           continue;
         }
 
@@ -109,7 +93,7 @@ int main(int argc, const char **argv)
 
       if (FD_ISSET(sockfd, &r_server.sets.except_s))
       {
-          remove_client(&cur_client, &r_server.list_of_clients);
+          remove_client(&cur_client, &r_server.l_clients);
           continue;
       }
 

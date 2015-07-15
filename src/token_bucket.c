@@ -13,7 +13,7 @@
  */
 void bucket_init(const int velocity, token_bucket *bucket)
 {
-  bucket->rate = velocity * 1024;
+  bucket->rate = velocity;
   bucket->remain_tokens = bucket->rate;
   bucket->transmission = 1;
 }
@@ -48,27 +48,6 @@ void bucket_fill(token_bucket *bucket)
 {
   bucket->remain_tokens = bucket->rate;
   bucket->transmission = 1;
-}
-
-/*! \brief Verifica se o bucket tem determinada quantidade de tokens
- *
- * \param[in] bucket O bucket a ser verificado
- * \param[in] tokens A quantidade de tokens
- *
- * \return 0 Caso OK
- * \return -1 Caso nao tenha a quantidade de buckets
- *
- * \note Coloca a flag de transmissao como 0 caso nao tenha tokens
- */
-int bucket_verify_tokens(token_bucket *bucket, int tokens)
-{
-  if (bucket->remain_tokens < tokens)
-  {
-    bucket->transmission = 0;
-    return -1;
-  }
-
-  return 0;
 }
 
 /*! \brief Calcula a diferenca de tempo em microsegundos
@@ -108,9 +87,6 @@ struct timeval timeval_subtract(const struct timeval *cur_time,
  * \param[out] burst_remain_time O tempo restante para a burst
  *
  * \return timeval O tempo restante
- *
- * \note Caso o tempo restante seja maior do que a burst, o tempo restante
- * tera valor igual ao tempo da burst
  *
  */
 struct timeval burst_remain_time(const struct timeval *burst_cur_time)

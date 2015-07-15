@@ -28,8 +28,6 @@ int bucket_withdraw(const int remove_tokens, token_bucket *bucket);
 
 void bucket_fill(token_bucket *bucket);
 
-int bucket_verify_tokens(token_bucket *bucket, const int tokens);
-
 struct timeval timeval_subtract(const struct timeval *cur_time, 
                                 const struct timeval *last_time);
 

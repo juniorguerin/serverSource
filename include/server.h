@@ -42,7 +42,7 @@
 #define ROOT_LEN 2048
 #define NUMBER_BASE 10
 #define PORT_LEN 8
-#define VEL_LEN 6
+#define VEL_LEN 12
 #define PROTOCOL_LEN 9
 #define METHOD_LEN 5 
 #define RESOURCE_LEN 200
@@ -56,10 +56,11 @@
 
 #define PENDING_DATA 0x01
 #define REQUEST_RECEIVED 0x02
-#define WRITE_DATA 0x04
-#define WRITE_HEADER 0x08
-#define SIGNAL_READY 0x10
-// 0x20 0x40 0x80
+#define WRITE_HEADER 0x04
+#define WRITE_DATA 0x08
+#define READ_DATA 0x10
+#define SIGNAL_READY 0x20
+#define FINISHED 0x40
 
 extern const char *supported_methods[];
 typedef enum http_methods_
@@ -133,7 +134,7 @@ typedef struct server_fd_sets_
 /*! \brief Informacoes a respeito do estado atual do servidor */
 typedef struct server_ 
 {
-  client_list list_of_clients; /*!< Lista de clientes conectados */
+  client_list l_clients; /*!< Lista de clientes conectados */
   server_fd_sets sets; /*!< Os fd_sets */
   long listen_port; /*!< A porta de escuta do servidor */
   int listenfd; /*!< O socket de escuta */
@@ -143,6 +144,7 @@ typedef struct server_
   unsigned int velocity; /*!< Velocidade de conexao */
   struct timeval last_burst; /*!< Ultimo inicio de burst */
   threadpool thread_pool; /*!< Pool de threads */
+  int wait_signal; /*!< Clientes esperando sinal de threads */
   long signals[SIGNAL_MAX][SIGNAL_COL]; /*!< Vetor de sinalizacao */
 } server;
 
@@ -151,6 +153,8 @@ int parse_arguments(int argc, const char *argv[], server *r_server);
 int create_listenfd(const server *r_server);
 
 int create_local_socket();
+
+int select_analysis(server *r_server);
 
 int make_connection(server *r_server);
 
@@ -177,6 +181,6 @@ void recv_thread_signals(server *r_server);
 
 void process_thread_signals(server *r_server);
 
-int process_read_file(client_node *client, threadpool *pool);
+int process_read_file(client_node *client, server *r_server);
 
 #endif
