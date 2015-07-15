@@ -34,23 +34,21 @@ int main(int argc, const char **argv)
     int transmission_flag = 0;
     client_node *cur_client = NULL;
     struct timeval burst_cur_time;
+    struct timeval *select_timeout = NULL;
 
-    burst_cur_time = burst_init(&r_server.last_burst, 
+    burst_cur_time = burst_init(&r_server.last_burst,
                                 &r_server.list_of_clients); 
     
     transmission_flag = init_sets(&r_server);
     if (r_server.list_of_clients.size && !transmission_flag)
     {
-      struct timeval burst_rem_time = 
-                                   burst_remain_time(&burst_cur_time);
-      nready = select(r_server.maxfd_number + 1, &r_server.sets.read_s,
-                      &r_server.sets.write_s, &r_server.sets.except_s,
-                      &burst_rem_time);
+      struct timeval burst_rem_time = burst_remain_time(&burst_cur_time);
+      select_timeout = &burst_rem_time;
     }
-    else
-      nready = select(r_server.maxfd_number + 1, &r_server.sets.read_s,
+    
+    nready = select(r_server.maxfd_number + 1, &r_server.sets.read_s,
                       &r_server.sets.write_s, &r_server.sets.except_s,
-                      NULL);
+                      select_timeout);
     
     if (0 > nready)
     {
