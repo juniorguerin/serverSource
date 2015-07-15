@@ -96,12 +96,15 @@ int main(int argc, const char **argv)
      
       if (FD_ISSET(sockfd, &r_server.sets.write_s))
       {
-        if (0 != send_header(cur_client))
+        if (0 != send_header(cur_client) ||
+            0 != process_read_file(cur_client, &r_server.thread_pool) ||
+            0 != send_response(cur_client))
         {
           remove_client(&cur_client, &r_server.list_of_clients);
           continue;
         }
 
+        /*
         if(0 != send_response(cur_client))
         {
           remove_client(&cur_client, &r_server.list_of_clients);
@@ -112,7 +115,7 @@ int main(int argc, const char **argv)
         {
           remove_client(&cur_client, &r_server.list_of_clients);
           continue;
-        }
+        } */
 
         if (0 >= --nready)
           break;

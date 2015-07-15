@@ -186,7 +186,8 @@ int send_header(client_node *cur_client)
   int printf_return = 0;
 
   /* Nao e necessario gerar o header */
-  if (!(cur_client->status & WRITE_HEADER))
+  if (cur_client->status & WRITE_DATA ||
+      cur_client->status & PENDING_DATA)
     return 0;
 
   resp_status = cur_client->resp_status;
@@ -206,8 +207,6 @@ int send_header(client_node *cur_client)
   if (cur_client->resp_status != OK)
     return -1;
 
-  cur_client->status = cur_client->status & (~WRITE_HEADER);
-  cur_client->status = cur_client->status | WRITE_DATA;
   return 0;
 }
 
@@ -686,7 +685,9 @@ int send_response(client_node *client)
 {
   int b_sent;
 
-  if (!(client->status & SIGNAL_READY) && client->status & WRITE_DATA)
+  if (!(client->status & WRITE_DATA) && 
+      !(client->status & WRITE_HEADER) &&
+      !(client->status & PENDING_DATA))
     return 0;
 
   if(0 > (b_sent = send(client->sockfd, client->buffer, 
@@ -703,9 +704,21 @@ int send_response(client_node *client)
   }
 
   bucket_withdraw(b_sent, &client->bucket);
+  client->pos_buf = 0;
   client->status = client->status & (~PENDING_DATA);
   client->status = client->status & (~WRITE_DATA);
-  client->pos_buf = 0;
+
+  if (client->status & WRITE_HEADER)
+  {
+    if (client->resp_status != OK)
+      client->status = client->status | FINISHED;
+    else
+    {
+      client->status = client->status & (~WRITE_HEADER);
+      client->status = client->status | WRITE_DATA;
+    }
+  }
+  
   return 0;
 }
 
