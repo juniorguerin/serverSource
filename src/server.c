@@ -839,33 +839,32 @@ int select_analysis(server *r_server)
 
   /* Tempo de espera por sinalizacao */
   timeout_ref.tv_sec = 0;
-  timeout_ref.tv_usec = 10000;
+  timeout_ref.tv_usec = 1000;
 
   while (!nready)
   {
     timeout = NULL;
-    burst_cur_time = burst_init(&r_server->last_burst,
-                                &r_server->l_clients);  
     
-    if (r_server->l_clients.size)
+    if (0 < r_server->wait_signal)
+    {
+      recv_thread_signals(r_server);
+      process_thread_signals(r_server);
+    }
+
+    burst_cur_time = burst_init(&r_server->last_burst,
+                                &r_server->l_clients);   
+    transmission_flag = init_sets(r_server); 
+    
+    if (r_server->l_clients.size && !transmission_flag)
     {
       burst_rem_time = burst_remain_time(&burst_cur_time); 
-      if (0 == burst_rem_time.tv_usec)
-        continue;
 
       if (0 < r_server->wait_signal)
-      {
-        recv_thread_signals(r_server);
-        process_thread_signals(r_server);
-
-        if (0 < r_server->wait_signal)
-          timeout = &timeout_ref;
-      }
+        timeout = &timeout_ref;
       else
         timeout = &burst_rem_time;
     }
 
-    init_sets(r_server); 
     nready = select(r_server->maxfd_number + 1, &r_server->sets.read_s,
                     &r_server->sets.write_s, &r_server->sets.except_s,
                     timeout);
