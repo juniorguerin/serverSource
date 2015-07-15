@@ -34,26 +34,25 @@ int main(int argc, const char **argv)
     int nready = 0;
     int transmission_flag = 0;
     client_node *cur_client = NULL;
+    struct timeval *select_timeout = NULL;
     struct timeval burst_cur_time;
 
     recv_thread_signals(&r_server);
     process_thread_signals(&r_server);
 
-    burst_cur_time = burst_init(&r_server.last_burst, 
+    burst_cur_time = burst_init(&r_server.last_burst,
                                 &r_server.list_of_clients); 
     
     transmission_flag = init_sets(&r_server);
     if (r_server.list_of_clients.size && !transmission_flag)
     {
       struct timeval burst_rem_time = burst_remain_time(&burst_cur_time);
-      nready = select(r_server.maxfd_number + 1, &r_server.sets.read_s,
-                      &r_server.sets.write_s, &r_server.sets.except_s,
-                      &burst_rem_time);
+      select_timeout = &burst_rem_time;
     }
-    else
-      nready = select(r_server.maxfd_number + 1, &r_server.sets.read_s,
-                      &r_server.sets.write_s, &r_server.sets.except_s, NULL);
-    
+      
+    nready = select(r_server.maxfd_number + 1, &r_server.sets.read_s,
+                    &r_server.sets.write_s, &r_server.sets.except_s,
+                    select_timeout); 
     if (0 > nready)
     {
       if (EINTR == errno)
@@ -103,19 +102,6 @@ int main(int argc, const char **argv)
           remove_client(&cur_client, &r_server.list_of_clients);
           continue;
         }
-
-        /*
-        if(0 != send_response(cur_client))
-        {
-          remove_client(&cur_client, &r_server.list_of_clients);
-          continue;
-        }
-
-        if (0 != process_read_file(cur_client, &r_server.thread_pool))
-        {
-          remove_client(&cur_client, &r_server.list_of_clients);
-          continue;
-        } */
 
         if (0 >= --nready)
           break;

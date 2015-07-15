@@ -646,8 +646,7 @@ int process_read_file(client_node *client, threadpool *pool)
   io_args args;
   int bytes_to_read; 
 
-  if (!client->bucket.transmission || 
-      client->status & PENDING_DATA ||
+  if (client->status & PENDING_DATA ||
       !(client->status & WRITE_DATA))
     return 0;
   
