@@ -122,33 +122,6 @@ static char *http_code_char(const http_code http_code)
   return NULL;
 }
 
-/*! \brief Gera o header da resposta ao cliente
- *
- * \param[in] cliente Estrutura que contem todas as informacoes sobre o cliente
- * e sobre a requisicao feita
- *
- * \return 0 Caso ok
- * \return -1 Caso haja algum erro
- */
-static int create_header(client_node *cur_client)
-{
-  int resp_status = 0;
-  int printf_return = 0;
-  
-  resp_status = cur_client->resp_status;
-
-  printf_return = snprintf(cur_client->buffer, BUFFER_LEN - 1,
-                           "%s %d %s\r\n\r\n", 
-                           supported_protocols[cur_client->protocol], 
-                           resp_status, 
-                           http_code_char(cur_client->resp_status));
-  if (printf_return >= BUFFER_LEN || printf_return < 0)
-    return -1;
-
-  cur_client->pos_buf = printf_return;
-  return 0;
-}
-
 /*! \brief Verifica qual o protocolo da request do cliente
  *
  * \param[in] protocol O protocolo extraido da request do cliente
@@ -197,6 +170,36 @@ static void extr_req_params(client_node *cur_client, char *method,
   
   if (3 != num_read)
     cur_client->resp_status = BAD_REQUEST;
+}
+
+/*! \brief Gera o header da resposta ao cliente
+ *
+ * \param[in] cliente Estrutura que contem todas as informacoes sobre o cliente
+ * e sobre a requisicao feita
+ *
+ * \return 0 Caso ok
+ * \return -1 Caso haja algum erro
+ */
+int create_header(client_node *cur_client)
+{
+  int resp_status = 0;
+  int printf_return = 0;
+  
+  if (!(cur_client->status & WRITE_HEADER))
+    return 0;
+  
+  resp_status = cur_client->resp_status;
+
+  printf_return = snprintf(cur_client->buffer, BUFFER_LEN - 1,
+                           "%s %d %s\r\n\r\n", 
+                           supported_protocols[cur_client->protocol], 
+                           resp_status, 
+                           http_code_char(cur_client->resp_status));
+  if (printf_return >= BUFFER_LEN || printf_return < 0)
+    return -1;
+
+  cur_client->pos_buf = printf_return;
+  return 0;
 }
 
 /*! \brief Aloca um novo elemento da estrutura de clientes
@@ -568,13 +571,9 @@ int recv_client_msg(client_node *cur_client)
   int bytes_to_receive;
 
   bytes_to_receive = BUFFER_LEN - cur_client->pos_buf - 1;
-  if (cur_client->bucket.rate < bytes_to_receive)
-    bytes_to_receive = cur_client->bucket.rate;
+  if (cur_client->bucket.remain_tokens < bytes_to_receive)
+    bytes_to_receive = cur_client->bucket.remain_tokens;
   
-  if (0 > bucket_verify_tokens(&cur_client->bucket, 
-      bytes_to_receive))
-    return 0;
-
   if (0 > read_client_input(bytes_to_receive, cur_client))
     return -1;
 
@@ -621,25 +620,14 @@ int build_response(client_node *cur_client)
   int bytes_to_read;
 
   /* Nao ha necessidade de escrever no buffer atual */
-  if (cur_client->status & PENDING_DATA)
-    return 0;
-
-  if (cur_client->status & WRITE_HEADER)
-  {
-    if (0 > create_header(cur_client))
-      return -1;
-
-    cur_client->status = cur_client->status & (~WRITE_HEADER);
-    cur_client->status = cur_client->status | WRITE_DATA;
-  }
+  if (cur_client->status & PENDING_DATA ||
+      !(cur_client->status & WRITE_DATA))
+    return 0; 
 
   bytes_to_read = BUFFER_LEN - cur_client->pos_buf - 1;
-  if (cur_client->bucket.rate < bytes_to_read)
-    bytes_to_read = cur_client->bucket.rate;
-
-  if (0 > bucket_verify_tokens(&cur_client->bucket, bytes_to_read))
-    return 0;
-  
+  if (cur_client->bucket.remain_tokens < bytes_to_read)
+    bytes_to_read = cur_client->bucket.remain_tokens;
+   
   if (OK == cur_client->resp_status)
     if (0 >= (bytes_read = fread(cur_client->buffer + cur_client->pos_buf,
                                  sizeof(char), 
@@ -648,7 +636,10 @@ int build_response(client_node *cur_client)
       return -1;
 
   if (bytes_read < bytes_to_read)
+  {
     cur_client->status = cur_client->status & (~WRITE_DATA);
+    cur_client->status = cur_client->status | FINISHED;
+  }
   
   cur_client->pos_buf += bytes_read;
   return 0;
@@ -680,7 +671,18 @@ int send_response(client_node *cur_client)
 
   bucket_withdraw(sent_bytes, &cur_client->bucket);
   cur_client->status = cur_client->status & (~PENDING_DATA);
- 
+  
+  if (cur_client->status & WRITE_HEADER)
+  {
+    if (cur_client->resp_status != OK)
+      cur_client->status = cur_client->status | FINISHED;
+    else
+    {
+      cur_client->status = cur_client->status & (~WRITE_HEADER);
+      cur_client->status = cur_client->status | (WRITE_DATA);
+    }
+  }
+
   cur_client->pos_buf = 0;
   return 0;
 }

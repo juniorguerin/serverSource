@@ -41,14 +41,16 @@ int main(int argc, const char **argv)
     transmission_flag = init_sets(&r_server);
     if (r_server.list_of_clients.size && !transmission_flag)
     {
-      struct timeval burst_rem_time = burst_remain_time(&burst_cur_time);
+      struct timeval burst_rem_time = 
+                                   burst_remain_time(&burst_cur_time);
       nready = select(r_server.maxfd_number + 1, &r_server.sets.read_s,
                       &r_server.sets.write_s, &r_server.sets.except_s,
                       &burst_rem_time);
     }
     else
       nready = select(r_server.maxfd_number + 1, &r_server.sets.read_s,
-                      &r_server.sets.write_s, &r_server.sets.except_s, NULL);
+                      &r_server.sets.write_s, &r_server.sets.except_s,
+                      NULL);
     
     if (0 > nready)
     {
@@ -92,14 +94,15 @@ int main(int argc, const char **argv)
      
       if (FD_ISSET(sockfd, &r_server.sets.write_s))
       {
-        if (0 != build_response(cur_client) || 
+        if (0 != create_header(cur_client) ||
+            0 != build_response(cur_client) || 
             0 != send_response(cur_client))
         {
           remove_client(&cur_client, &r_server.list_of_clients);
           continue;
         }
 
-        if (!(cur_client->status & WRITE_DATA) &&
+        if (cur_client->status & FINISHED &&
             !(cur_client->status & PENDING_DATA))
         {
           remove_client(&cur_client, &r_server.list_of_clients);

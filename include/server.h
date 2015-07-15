@@ -42,7 +42,7 @@
 #define ROOT_LEN 2048
 #define NUMBER_BASE 10
 #define PORT_LEN 8
-#define VEL_LEN 6
+#define VEL_LEN 12
 #define PROTOCOL_LEN 9
 #define METHOD_LEN 5 
 #define RESOURCE_LEN 200
@@ -55,6 +55,7 @@
 #define REQUEST_RECEIVED 0x02
 #define WRITE_DATA 0x04
 #define WRITE_HEADER 0x08
+#define FINISHED 0x10
 
 extern const char *supported_methods[];
 typedef enum http_methods_
@@ -157,6 +158,8 @@ int read_client_input(int bytes_to_receive, client_node *cur_client);
 int recv_client_msg(client_node *cur_client);
 
 void verify_request(char *serv_root, client_node *cur_client);
+
+int create_header(client_node *cur_client);
 
 int build_response(client_node *cur_client);
 

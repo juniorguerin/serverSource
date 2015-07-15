@@ -8,12 +8,12 @@
 
 /*! \brief Inicializa um bucket com limite de tokens
  *
- * \param[in] velocity Velocidade em kb/s
+ * \param[in] velocity Velocidade em b/s
  * \param[out] bucket Bucket em questao
  */
 void bucket_init(const int velocity, token_bucket *bucket)
 {
-  bucket->rate = velocity * 1024;
+  bucket->rate = velocity;
   bucket->remain_tokens = bucket->rate;
   bucket->transmission = 1;
 }
@@ -21,7 +21,7 @@ void bucket_init(const int velocity, token_bucket *bucket)
 /*! \brief Remove uma quantidade especifica de tokens do bucket 
  *
  * \param[in] remove_tokens Quantidade de tokens a ser removida
- * \param[ou] bucket Bucket em questao
+ * \param[out] bucket Bucket em questao
  *
  * \return 0 Caso ok
  * \return -1 Caso nao tenha os tokens
@@ -32,6 +32,7 @@ int bucket_withdraw(const int remove_tokens,
   bucket->remain_tokens -= remove_tokens;
   if(0 >= bucket->remain_tokens)
   {
+    bucket->transmission = 0;
     bucket->remain_tokens = 0;
     return -1;
   }
@@ -59,6 +60,7 @@ void bucket_fill(token_bucket *bucket)
  *
  * \note Coloca a flag de transmissao como 0 caso nao tenha tokens
  */
+/*
 int bucket_verify_tokens(token_bucket *bucket, int tokens)
 {
   if (bucket->remain_tokens < tokens)
@@ -69,6 +71,7 @@ int bucket_verify_tokens(token_bucket *bucket, int tokens)
 
   return 0;
 }
+*/
 
 /*! \brief Calcula a diferenca de tempo em microsegundos
  *
