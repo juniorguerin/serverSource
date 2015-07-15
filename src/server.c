@@ -469,17 +469,11 @@ int remove_client(client_node **cur_client,
 /*! \brief Inicializa a estrutura r_server
  *
  * \param[out] r_server A estrutura a ser inicializada
- *
- * \return 0 Caso ok
- * \return -1 Caso haja erro de iniciacao
  */
-int init_server(server *r_server)
+void init_server(server *r_server)
 {
   memset(r_server, 0, sizeof(*r_server));
-  strcpy(r_server->lsocket_name, "./server_treinamento");
-  r_server->maxfd_number = -1;
-  
-  return 0;
+  r_server->maxfd_number = -1;  
 }
 
 /*! \brief Inicializa os fd_sets e a referencia do maior descritor

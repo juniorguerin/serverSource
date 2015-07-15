@@ -8,13 +8,9 @@
 
 int main(int argc, const char **argv)
 {
-  server r_server; 
-  
-  if (0 > init_server(&r_server))
-  {
-    fprintf(stderr, "init_server");
-    goto error;
-  }
+  server r_server;  
+
+  init_server(&r_server);
 
   if (0 > parse_arguments(argc, argv, &r_server))
   {
@@ -121,12 +117,8 @@ int main(int argc, const char **argv)
   return 0;
 
 error:
-  unlink(r_server.lsocket_name);
   if (r_server.listenfd)
     close(r_server.listenfd);
-  if (r_server.l_socket)
-    close(r_server.l_socket);
-  threadpool_destroy(&r_server.thread_pool);
   return -1;
 }
 

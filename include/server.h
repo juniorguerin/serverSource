@@ -132,7 +132,6 @@ typedef struct server_
   server_fd_sets sets; /*!< Os fd_sets */
   long listen_port; /*!< A porta de escuta do servidor */
   int listenfd; /*!< O socket de escuta */
-  int l_socket; /*!< Socket de escuta local */
   char lsocket_name[LSOCKET_NAME]; /*!< Nome do socket local */
   int maxfd_number; /*!< O maior descritor a observar */
   char serv_root[ROOT_LEN]; /*!< O endereco do root do servidor */
@@ -149,7 +148,7 @@ int create_local_socket(const server *r_server);
 
 int make_connection(server *r_server);
 
-int init_server(server *r_server);
+void init_server(server *r_server);
 
 int init_sets(server *r_server);
 
