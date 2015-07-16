@@ -50,7 +50,7 @@
 #define STR_METHOD_LEN STR(METHOD_LEN)
 #define STR_RESOURCE_LEN STR(RESOURCE_LEN)
 #define SIGNAL_MAX 128
-#define SIGNAL_COL 2
+#define SIGNAL_COL 3
 #define LSOCK_NAME "./server_treinamento"
 #define LSOCK_NAME_LEN 64
 
@@ -59,7 +59,7 @@
 #define WRITE_HEADER 0x04
 #define WRITE_DATA 0x08
 #define READ_DATA 0x10
-#define SIGNAL_READY 0x20
+#define SIGNAL_WAIT 0x20
 #define FINISHED 0x40
 
 extern const char *supported_methods[];
@@ -93,7 +93,7 @@ typedef struct client_node_
   int sockfd; /*!< Socket de conexao */
   char *buffer; /*!< Buffer do cliente */
   int pos_buf; /*!< Posicao da escrita no buffer */
-  int sent_buf; /*!< Posicao de envio no buffer */
+  int b_to_transfer; /*!< Bytes a transferir */
   unsigned char status; /*!< Flags para o estado do cliente */
   http_methods method; /*!< Metodo usado na request */
   http_protocols protocol; /*!< Protocolo usado na request */
@@ -114,7 +114,8 @@ typedef struct client_list_
 void client_node_append(client_node *client, 
                         client_list *list_of_clients);
 
-int client_node_pop(client_node *client, client_list *list_of_clients);
+int client_node_pop(client_node *client, 
+                    client_list *list_of_clients);
 
 client_node *client_node_allocate(int sockfd);
 
@@ -142,11 +143,11 @@ typedef struct server_
   unsigned int velocity; /*!< Velocidade de conexao */
   struct timeval last_burst; /*!< Ultimo inicio de burst */
   threadpool thread_pool; /*!< Pool de threads */
-  int wait_signal; /*!< Clientes esperando sinal de threads */
   long signals[SIGNAL_MAX][SIGNAL_COL]; /*!< Vetor de sinalizacao */
 } server;
 
-int server_parse_arguments(int argc, const char *argv[], server *r_server);
+int server_parse_arguments(int argc, const char *argv[], 
+                           server *r_server);
 
 int server_client_remove(client_node **client, 
                          client_list *list_of_clients); 
@@ -155,13 +156,13 @@ int server_create_listenfd(const server *r_server);
 
 int server_create_local_socket();
 
-void server_select_analysis(server *r_server, struct timeval *timeout);
+void server_select_analysis(server *r_server, 
+                            struct timeval **timeout,
+                            struct timeval *burst_rem_time);
 
 int server_make_connection(server *r_server);
 
 int server_init(server *r_server);
-
-int server_init_sets(server *r_server);
 
 int server_read_client_input(int bytes_to_receive, 
                              client_node *cur_client);

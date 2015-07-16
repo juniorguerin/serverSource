@@ -33,22 +33,28 @@ int main(int argc, const char **argv)
   {
     client_node *cur_client = NULL;
     int nready = 0;
+    struct timeval *timeout = NULL;
+    struct timeval burst_rem_time;
 
-    while (!nready)
+    server_select_analysis(&r_server, &timeout, &burst_rem_time);
+    nready = select(r_server.maxfd_number + 1,
+                    &r_server.sets.read_s, &r_server.sets.write_s, 
+                    &r_server.sets.except_s, timeout);
+    if (0 > nready)
     {
-      struct timeval *timeout = NULL;
-      server_select_analysis(&r_server, timeout);
-      nready = select(r_server.maxfd_number + 1, 
-                      &r_server.sets.read_s, &r_server.sets.write_s, 
-                      &r_server.sets.except_s, timeout);
+      if (EINTR == errno)
+        continue;
 
-      if (0 > nready)
-      {
-        if (EINTR == errno)
-          continue;
+      goto error;
+    }
 
-        goto error;
-      }
+    if (FD_ISSET(r_server.l_socket, &r_server.sets.read_s))
+    {
+      server_recv_thread_signals(&r_server);
+      server_process_thread_signals(&r_server); 
+      
+      if (0 >= --nready)
+        continue;
     }
 
     if (FD_ISSET(r_server.listenfd, &r_server.sets.read_s))
@@ -83,8 +89,8 @@ int main(int argc, const char **argv)
       if (FD_ISSET(sockfd, &r_server.sets.write_s))
       {
         if (0 != server_send_header(cur_client) ||
-            0 != server_send_response(cur_client) ||
-            0 != server_process_read_file(cur_client, &r_server))
+            0 != server_process_read_file(cur_client, &r_server) ||
+            0 != server_send_response(cur_client))
         {
           server_client_remove(&cur_client, &r_server.l_clients);
           continue;

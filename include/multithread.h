@@ -14,13 +14,33 @@
 #include <sys/un.h>
 
 #define THREAD_NUM 4
-#define SIGNAL_LEN 4
+#define SIGNAL_LEN 6
 
-typedef struct task_node_ {
-    void (*function)(void *); /*<! Ponteiro para a funcao da tarefa */
-    void *argument; /*<! Argumento passado para a funcao */
-    struct task_node_ *next; /*<! Proximo elemento da lista */
-    struct task_node_ *prev; /*<! Elemento anterior */
+typedef enum task_status_
+{
+  MORE_DATA,
+  FINISHED,
+  ERROR,
+  NUM_TASK_STATUS
+} task_status;
+
+typedef enum task_kind_
+{
+  READ,
+  WRITE,
+  NUM_TASK_KIND
+} task_kind;
+
+typedef struct task_node_ 
+{
+  void (*function)(void *); /*<! Ponteiro para a funcao da tarefa */
+  void *argument; /*<! Argumento passado para a funcao */
+  task_status task_st; /*<! Status da tarefa */
+  task_kind task_kd; /*<! Tipo de tarefa */
+  int b_to_transfer; /*<! Bytes a transferir */
+  int sockfd; /*<! Socket do cliente */
+  struct task_node_ *next; /*<! Proximo elemento da lista */
+  struct task_node_ *prev; /*<! Elemento anterior */
 } task_node;
 
 typedef struct task_list_ {
@@ -47,16 +67,6 @@ typedef struct threadpool_ {
   int l_socket; /*<! Socket local */
   struct sockaddr_un main_t_address; /*<! Endereco thread principal */
 } threadpool;
-
-typedef struct io_args_
-{
-  int sockfd; /*<! Socket do cliente */
-  char *buffer; /*<! Buffer a ser escrito / lido */
-  int b_to_transfer; /*<! Bytes a transferir */
-  int b_transferred; /*<! Bytes transferidos */
-  int task_status; /*<! Status da tarefa */
-  FILE *file; /*<! Arquivo a ser lido / escrito */
-} io_args;
 
 int threadpool_init(const char *lsocket_name, threadpool *pool);
 

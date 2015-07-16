@@ -66,25 +66,25 @@ void bucket_burst_remain_time(const struct timeval *burst_cur_time,
   timerclear(burst_rem_time);
   burst_total_time.tv_sec = BURST_TIME;
 
-  timersub(burst_cur_time, &burst_total_time, burst_rem_time);
+  timersub(&burst_total_time, burst_cur_time, burst_rem_time);
 }
 
 /*! \brief Recarrega todos os buckets a cada 1 segundo
  *
- * \param[in] last_fill O momento da ultima recarga de tokens
+ * \param[in] burst_ini_time O momento da ultima recarga de tokens
  * \param[out] burst_cur_time Tempo da burst atual
  */
-void bucket_burst_init(struct timeval *last_fill, 
+void bucket_burst_init(struct timeval *burst_ini_time, 
                        struct timeval *burst_cur_time)
 {
   struct timeval cur_time;
 
   gettimeofday(&cur_time, NULL);
-  timersub(last_fill, &cur_time, burst_cur_time);
+  timersub(&cur_time, burst_ini_time, burst_cur_time);
 
   if (burst_cur_time->tv_sec >= 1)
   {
-    *last_fill = cur_time;
+    *burst_ini_time = cur_time;
     timerclear(burst_cur_time);
   }
 }

@@ -15,8 +15,9 @@ static void *threadpool_thread(void *cur_threadpool)
   char signal_str[SIGNAL_LEN];
   threadpool *pool = (threadpool *) cur_threadpool;
   task_node *task = NULL;
-  io_args *args = NULL;
 
+  memset(signal_str, 0, sizeof(signal_str));
+  
   while (1)
   {
     pthread_mutex_lock(&(pool->lock));
@@ -32,11 +33,10 @@ static void *threadpool_thread(void *cur_threadpool)
 
     pthread_mutex_unlock(&(pool->lock));
 
-    (*(task->function))(task->argument);
-    args = (io_args *) task->argument;
+    (*(task->function))(task);
 
-    sprintf(signal_str, "%d %d", args->sockfd, 
-            args->task_status);
+    sprintf(signal_str, "%d %d %d", task->sockfd, task->task_kd, 
+            task->task_st);
     bytes_sent = sendto(pool->l_socket, signal_str, SIGNAL_LEN, 0,
                         (struct sockaddr *) &pool->main_t_address,
                         sizeof(struct sockaddr_un));

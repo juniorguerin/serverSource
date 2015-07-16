@@ -30,6 +30,6 @@ void bucket_fill(token_bucket *bucket);
 void bucket_burst_remain_time(const struct timeval *burst_cur_time, 
                               struct timeval *burst_rem_time);
 
-void bucket_burst_init(struct timeval *last_fill, 
+void bucket_burst_init(struct timeval *burst_ini_time, 
                        struct timeval *burst_cur_time);
 #endif

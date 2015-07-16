@@ -165,6 +165,51 @@ static void server_extr_req_params(client_node *cur_client, char *method,
     cur_client->resp_status = BAD_REQUEST;
 }
 
+/*! \brief Inicializa os fd_sets e a referencia do maior descritor
+ *
+ * \param[out] r_server Estrutura do servidor
+ */
+static int server_init_sets(server *r_server)
+{
+  int cur_sockfd = 0;
+  int transmission = 0;
+  client_node *cur_client = NULL;
+
+  FD_ZERO(&r_server->sets.read_s);
+  FD_ZERO(&r_server->sets.write_s);
+  FD_ZERO(&r_server->sets.except_s);
+  FD_SET(r_server->listenfd, &r_server->sets.read_s);
+  r_server->maxfd_number = r_server->listenfd;
+  FD_SET(r_server->l_socket, &r_server->sets.read_s);
+  r_server->maxfd_number = MAX(r_server->maxfd_number,
+                               r_server->l_socket);
+
+  for(cur_client = r_server->l_clients.head; cur_client; 
+      cur_client = cur_client->next)
+  {
+    if (!cur_client->bucket.transmission)
+      continue;
+
+    cur_sockfd = cur_client->sockfd;
+    r_server->maxfd_number = MAX(cur_sockfd, r_server->maxfd_number);
+   
+    if (!(cur_client->status & SIGNAL_WAIT))
+    {
+      if (cur_client->status & WRITE_HEADER || 
+          cur_client->status & WRITE_DATA)
+        FD_SET(cur_sockfd, &r_server->sets.write_s);
+      else
+        FD_SET(cur_sockfd, &r_server->sets.read_s);
+    }
+
+    FD_SET(cur_sockfd, &r_server->sets.except_s);
+
+    transmission = 1;
+  }
+
+  return transmission;
+}
+
 /*! \brief Gera o header da resposta ao cliente se for necessario
  *
  * \param[in] cliente Estrutura que contem todas as informacoes sobre o cliente
@@ -179,8 +224,7 @@ int server_send_header(client_node *cur_client)
   int printf_return = 0;
 
   /* Nao e necessario gerar o header */
-  if (cur_client->status & WRITE_DATA ||
-      cur_client->status & PENDING_DATA)
+  if (!(cur_client->status & WRITE_HEADER))
     return 0;
 
   resp_status = cur_client->resp_status;
@@ -478,46 +522,6 @@ int server_init(server *r_server)
   return 0;
 }
 
-/*! \brief Inicializa os fd_sets e a referencia do maior descritor
- *
- * \param[out] r_server Estrutura do servidor
- *
- */
-int server_init_sets(server *r_server)
-{
-  int cur_sockfd = 0;
-  int transmission = 0;
-  client_node *cur_client = NULL;
-
-  FD_ZERO(&r_server->sets.read_s);
-  FD_ZERO(&r_server->sets.write_s);
-  FD_ZERO(&r_server->sets.except_s);
-  FD_SET(r_server->listenfd, &r_server->sets.read_s);
-  r_server->maxfd_number = r_server->listenfd;
-
-  for(cur_client = r_server->l_clients.head; cur_client; 
-      cur_client = cur_client->next)
-  {
-    if (!cur_client->bucket.transmission)
-      continue;
-
-    cur_sockfd = cur_client->sockfd;
-    r_server->maxfd_number = MAX(cur_sockfd, r_server->maxfd_number);
-    
-    if (cur_client->status & WRITE_HEADER || 
-        cur_client->status & WRITE_DATA)
-      FD_SET(cur_sockfd, &r_server->sets.write_s);
-    else if(!(cur_client->status & SIGNAL_READY))
-      FD_SET(cur_sockfd, &r_server->sets.read_s);
-
-    FD_SET(cur_sockfd, &r_server->sets.except_s);
-
-    transmission = 1;
-  }
-
-  return transmission;
-}
-
 /*! \brief Funcao que recebe a mensagem e coloca em um buffer
  *
  * \param[in] bytes_to_read Quantidade de bytes a serem lidos
@@ -608,20 +612,31 @@ void server_verify_request(char *serv_root, client_node *cur_client)
  * \param[out] task Task com informacoes do cliente como argumento 
  *
  */
-void server_read_file(void *c_args)
+void server_read_file(void *c_task)
 {
-  io_args *args = (io_args *) c_args;
+  task_node *task = (task_node *) c_task;
+  client_node *client = (client_node *) task->argument;
   int bytes_read;
- 
-  if (0 >= (bytes_read = fread(args->buffer,
-                               sizeof(char), 
-                               args->b_to_transfer, 
-                               args->file)))
-    args->task_status = -1;
-  else
-  { 
-    args->b_transferred = bytes_read;
-    args->task_status = 1;
+
+  char *buffer = client->buffer;
+  FILE *file = client->file;
+  int *pos_buf = &client->pos_buf;
+  int b_to_transfer = client->b_to_transfer;
+
+  task->task_kd = READ;
+  task->sockfd = client->sockfd;
+
+  if (0 >= (bytes_read = fread(buffer, sizeof(char), 
+                               b_to_transfer, file)))
+    task->task_st = ERROR;
+  else 
+  {
+    *pos_buf = bytes_read;
+
+    if (b_to_transfer > bytes_read) 
+      task->task_st = FINISHED;
+    else
+      task->task_st = MORE_DATA;
   }
 }
 
@@ -636,28 +651,23 @@ void server_read_file(void *c_args)
  */
 int server_process_read_file(client_node *client, server *r_server)
 {
-  io_args args;
   int bytes_to_read; 
 
-  if (client->status & PENDING_DATA ||
-      !(client->status & WRITE_DATA))
+  if (client->status & PENDING_DATA || client->status & FINISHED ||
+      client->status & SIGNAL_WAIT)
     return 0;
   
   if (BUFFER_LEN <= client->bucket.remain_tokens) 
     bytes_to_read = BUFFER_LEN;
   else
     bytes_to_read = client->bucket.remain_tokens;
-  
-  args.file = client->file;
-  args.buffer = client->buffer;
-  args.sockfd = client->sockfd;
-  args.b_to_transfer = bytes_to_read;
 
-  if(0 != threadpool_add(server_read_file, &args, 
+  client->b_to_transfer = bytes_to_read;
+  if(0 != threadpool_add(server_read_file, client, 
                          &r_server->thread_pool))
     return -1;
 
-  r_server->wait_signal++;
+  client->status = client->status & SIGNAL_WAIT;
   return 0;
 }
 
@@ -672,9 +682,8 @@ int server_send_response(client_node *client)
 {
   int b_sent;
 
-  if (!(client->status & WRITE_DATA) && 
-      !(client->status & WRITE_HEADER) &&
-      !(client->status & PENDING_DATA))
+  if (client->status & SIGNAL_WAIT ||
+      client->status & FINISHED)
     return 0;
 
   if(0 > (b_sent = send(client->sockfd, client->buffer, 
@@ -693,7 +702,6 @@ int server_send_response(client_node *client)
   bucket_withdraw(b_sent, &client->bucket);
   client->pos_buf = 0;
   client->status = client->status & (~PENDING_DATA);
-  client->status = client->status & (~WRITE_DATA);
 
   if (client->status & WRITE_HEADER)
   {
@@ -712,7 +720,6 @@ int server_send_response(client_node *client)
 /*! \brief Recebe as mensagens de servico das threads
  *
  * \param[out] r_server A estrutura do servidor
- *
  */
 void server_recv_thread_signals(server *r_server)
 {
@@ -739,11 +746,11 @@ void server_recv_thread_signals(server *r_server)
 
     /* Armazena o socket e o status da tarefa */
     r_server->signals[cont][0] = strtol(strtok(signal_str, " "), &endptr,
-                              NUMBER_BASE);
-    r_server->signals[cont][1] = strtol(strtok(NULL, "/0"), &endptr,
-                              NUMBER_BASE);
-
-    r_server->wait_signal--;
+                                        NUMBER_BASE);
+    r_server->signals[cont][1] = strtol(strtok(NULL, " "), &endptr,
+                                        NUMBER_BASE);
+    r_server->signals[cont][2] = strtol(strtok(NULL, "/0"), &endptr,
+                                        NUMBER_BASE);
   }
 }
 
@@ -751,7 +758,6 @@ void server_recv_thread_signals(server *r_server)
  * necessario, fecha a conexao com o cliente
  *
  * \param[out] r_server A estrutura do servidor
- *
  */
 void server_process_thread_signals(server *r_server)
 {
@@ -762,7 +768,7 @@ void server_process_thread_signals(server *r_server)
   while (r_server->signals[cont][0] != 0)
   {
     int sockfd = r_server->signals[cont][0];
-    int status = r_server->signals[cont][1];
+    task_status status = r_server->signals[cont][2];
 
     cur_client = r_server->l_clients.head;
     while (sockfd != cur_client->sockfd && !cur_client)
@@ -771,41 +777,27 @@ void server_process_thread_signals(server *r_server)
     if (!cur_client)
       continue;
 
-    if (status < 0)
+    if (status != MORE_DATA)
       server_client_remove(&cur_client, &r_server->l_clients);
     else
-    {
-      cur_client->status = cur_client->status | WRITE_DATA;
-      cur_client->status = cur_client->status | SIGNAL_READY;
-    }
+      cur_client->status = cur_client->status & (~SIGNAL_WAIT);
 
     cont++;
   }
 }
 
-/*! \brief Contem analises e tarefas necessarias ao inicio de cada laco do
- * select: analise de sinalizacao das threads, calculo dos tempos de burst,
- * e inicializacao dos conjuntos de descritores
+/*! \brief Contem analises e tarefas necessarias ao select: inicio de burst e
+ * inicializacao dos descritores. Ha' determinacao de timeout do select, se
+ * necessario. Caso contrario, timeout permanece NULL
  *
  * \param[out] r_server A estrutura do servidor
  * \param[out] timeout O timeout a ser aplicado ao select
  */
-void server_select_analysis(server *r_server, struct timeval *timeout)
+void server_select_analysis(server *r_server, struct timeval **timeout,
+                            struct timeval *burst_rem_time)
 {
   int transmission_flag = 0;
   struct timeval burst_cur_time;
-  struct timeval burst_rem_time;
-  struct timeval timeout_ref;
-
-  /* Tempo de espera por sinalizacao das threads */
-  timeout_ref.tv_sec = 0;
-  timeout_ref.tv_usec = 1000;
-  
-  if (0 < r_server->wait_signal)
-  {
-    server_recv_thread_signals(r_server);
-    server_process_thread_signals(r_server);
-  }
 
   bucket_burst_init(&r_server->last_burst, &burst_cur_time);
   if (!timerisset(&burst_cur_time))
@@ -816,14 +808,10 @@ void server_select_analysis(server *r_server, struct timeval *timeout)
       bucket_fill(&cur_client->bucket);
   }
 
-  transmission_flag = server_init_sets(r_server);  
+  transmission_flag = server_init_sets(r_server);   
   if (r_server->l_clients.size && !transmission_flag)
   {
-    bucket_burst_remain_time(&burst_cur_time, &burst_rem_time); 
-
-    if (0 < r_server->wait_signal)
-      timeout = &timeout_ref;
-    else
-      timeout = &burst_rem_time;
+    bucket_burst_remain_time(&burst_cur_time, burst_rem_time); 
+    *timeout = burst_rem_time;
   } 
 }
