@@ -6,24 +6,24 @@
 
 #include "server.h"
 
+server r_server; 
+
 int main(int argc, const char **argv)
-{
-  server r_server; 
-  
-  if (0 > init_server(&r_server))
+{  
+  if (0 > server_init(&r_server))
   {
     fprintf(stderr, "init_server");
     goto error;
   }
 
-  if (0 > parse_arguments(argc, argv, &r_server))
+  if (0 > server_parse_arguments(argc, argv, &r_server))
   {
     fprintf(stderr, "usage: <root> <port> <velocity>\n");
     goto error;
   }
 
-  if (0 > (r_server.listenfd = create_listenfd(&r_server)) ||
-      0 > (r_server.l_socket = create_local_socket()))
+  if (0 > (r_server.listenfd = server_create_listenfd(&r_server)) ||
+      0 > (r_server.l_socket = server_create_local_socket()))
   {
     fprintf(stderr, "%s\n", strerror(errno));
     goto error;
@@ -32,19 +32,28 @@ int main(int argc, const char **argv)
   while (1)
   {
     client_node *cur_client = NULL;
-    int nready;
-    
-    if(0 > (nready = select_analysis(&r_server)))
-    {  
-      if (EINTR == errno)
-        continue;
+    int nready = 0;
 
-      goto error;
+    while (!nready)
+    {
+      struct timeval *timeout = NULL;
+      server_select_analysis(&r_server, timeout);
+      nready = select(r_server.maxfd_number + 1, 
+                      &r_server.sets.read_s, &r_server.sets.write_s, 
+                      &r_server.sets.except_s, timeout);
+
+      if (0 > nready)
+      {
+        if (EINTR == errno)
+          continue;
+
+        goto error;
+      }
     }
 
     if (FD_ISSET(r_server.listenfd, &r_server.sets.read_s))
     {
-      if (0 > make_connection(&r_server))
+      if (0 > server_make_connection(&r_server))
         continue;
 
       if (0 >= --nready)
@@ -58,14 +67,14 @@ int main(int argc, const char **argv)
 
       if (FD_ISSET(sockfd, &r_server.sets.read_s))
       {
-        if (0 > recv_client_msg(cur_client))
+        if (0 > server_recv_client_msg(cur_client))
         {
-          remove_client(&cur_client, &r_server.l_clients);
+          server_client_remove(&cur_client, &r_server.l_clients);
           continue;
         }
 
         if (cur_client->status & REQUEST_RECEIVED)
-          verify_request(r_server.serv_root, cur_client);
+          server_verify_request(r_server.serv_root, cur_client);
 
         if (0 >= --nready)
           break;
@@ -73,17 +82,17 @@ int main(int argc, const char **argv)
      
       if (FD_ISSET(sockfd, &r_server.sets.write_s))
       {
-        if (0 != send_header(cur_client) ||
-            0 != send_response(cur_client) ||
-            0 != process_read_file(cur_client, &r_server))
+        if (0 != server_send_header(cur_client) ||
+            0 != server_send_response(cur_client) ||
+            0 != server_process_read_file(cur_client, &r_server))
         {
-          remove_client(&cur_client, &r_server.l_clients);
+          server_client_remove(&cur_client, &r_server.l_clients);
           continue;
         }
 
         if (cur_client->status & FINISHED)
         {
-          remove_client(&cur_client, &r_server.l_clients);
+          server_client_remove(&cur_client, &r_server.l_clients);
           continue;
         }
 
@@ -93,7 +102,7 @@ int main(int argc, const char **argv)
 
       if (FD_ISSET(sockfd, &r_server.sets.except_s))
       {
-          remove_client(&cur_client, &r_server.l_clients);
+          server_client_remove(&cur_client, &r_server.l_clients);
           continue;
       }
 

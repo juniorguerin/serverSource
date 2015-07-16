@@ -50,37 +50,6 @@ void bucket_fill(token_bucket *bucket)
   bucket->transmission = 1;
 }
 
-/*! \brief Calcula a diferenca de tempo em microsegundos
- *
- * \param[in] cur_time Momento mais recente
- * \param[in] last_time Momento anterior
- *
- * \return timeval A diferenca de tempo
- */
-struct timeval timeval_subtract(const struct timeval *cur_time, 
-                                const struct timeval *last_time)
-{
-  struct timeval timeval_diff;
-  
-  memset(&timeval_diff, 0, sizeof(timeval_diff));
-
-  long usec = cur_time->tv_usec - last_time->tv_usec;
-  long sec = cur_time->tv_sec - last_time->tv_sec;
-
-  if (0 > sec)
-    return timeval_diff;
-  
-  if (0 > usec)
-  {
-    sec -= 1;
-    usec = 1000000 + usec;
-  }
-
-  timeval_diff.tv_usec = usec;
-  timeval_diff.tv_sec = sec;
-  return timeval_diff; 
-}
-
 /*! \brief Retorna tempo restante para o fim da burst atual
  *
  * \param[in] burst_cur_time O tempo atual da burst
@@ -89,14 +58,33 @@ struct timeval timeval_subtract(const struct timeval *cur_time,
  * \return timeval O tempo restante
  *
  */
-struct timeval burst_remain_time(const struct timeval *burst_cur_time)
+void bucket_burst_remain_time(const struct timeval *burst_cur_time, 
+                              struct timeval *burst_rem_time)
 {
-  struct timeval burst_rem_time;
-  memset(&burst_rem_time, 0, sizeof(burst_rem_time));
+  struct timeval burst_total_time;
 
-  if (burst_cur_time->tv_sec < BURST_TIME)
-    burst_rem_time.tv_usec = labs(BURST_U_TIME - 
-                                   burst_cur_time->tv_usec);
+  timerclear(burst_rem_time);
+  burst_total_time.tv_sec = BURST_TIME;
 
-  return burst_rem_time;
+  timersub(burst_cur_time, &burst_total_time, burst_rem_time);
+}
+
+/*! \brief Recarrega todos os buckets a cada 1 segundo
+ *
+ * \param[in] last_fill O momento da ultima recarga de tokens
+ * \param[out] burst_cur_time Tempo da burst atual
+ */
+void bucket_burst_init(struct timeval *last_fill, 
+                       struct timeval *burst_cur_time)
+{
+  struct timeval cur_time;
+
+  gettimeofday(&cur_time, NULL);
+  timersub(last_fill, &cur_time, burst_cur_time);
+
+  if (burst_cur_time->tv_sec >= 1)
+  {
+    *last_fill = cur_time;
+    timerclear(burst_cur_time);
+  }
 }

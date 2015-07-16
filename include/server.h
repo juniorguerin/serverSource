@@ -101,7 +101,7 @@ typedef struct client_node_
   FILE *file; /*!< Arquivo para o recurso solicitado */
   token_bucket bucket; /*!< Bucket para controle de velocidade */
   struct client_node_ *next; /*!< Proximo no' */
-  struct client_node_ *before; /*!< No' anterior */
+  struct client_node_ *prev; /*!< No' anterior */
 } client_node;
 
 /*! \brief Lista de clients  */
@@ -111,16 +111,14 @@ typedef struct client_list_
   int size; /*!< Tamanho da lista atual */
 } client_list; 
 
-void append_client(client_node *client, client_list *list_of_clients);
+void client_node_append(client_node *client, 
+                        client_list *list_of_clients);
 
-int pop_client(client_node *client, client_list *list_of_clients);
+int client_node_pop(client_node *client, client_list *list_of_clients);
 
-client_node *allocate_client_node(int sockfd);
+client_node *client_node_allocate(int sockfd);
 
-void free_client_node(client_node *client);
-
-int remove_client(client_node **client, 
-                  client_list *list_of_clients); 
+void client_node_free(client_node *client);
 
 /*! \brief Guarda as variaveis do tipo fd_set vinculadas ao servidor
  */
@@ -148,39 +146,40 @@ typedef struct server_
   long signals[SIGNAL_MAX][SIGNAL_COL]; /*!< Vetor de sinalizacao */
 } server;
 
-int parse_arguments(int argc, const char *argv[], server *r_server);
+int server_parse_arguments(int argc, const char *argv[], server *r_server);
 
-int create_listenfd(const server *r_server);
+int server_client_remove(client_node **client, 
+                         client_list *list_of_clients); 
 
-int create_local_socket();
+int server_create_listenfd(const server *r_server);
 
-int select_analysis(server *r_server);
+int server_create_local_socket();
 
-int make_connection(server *r_server);
+void server_select_analysis(server *r_server, struct timeval *timeout);
 
-int init_server(server *r_server);
+int server_make_connection(server *r_server);
 
-int init_sets(server *r_server);
+int server_init(server *r_server);
 
-int read_client_input(int bytes_to_receive, client_node *cur_client);
+int server_init_sets(server *r_server);
 
-int recv_client_msg(client_node *cur_client);
+int server_read_client_input(int bytes_to_receive, 
+                             client_node *cur_client);
 
-void verify_request(char *serv_root, client_node *cur_client);
+int server_recv_client_msg(client_node *cur_client);
 
-int send_header(client_node *cur_client);
+void server_verify_request(char *serv_root, client_node *cur_client);
 
-void read_file(void *cur_task);
+int server_send_header(client_node *cur_client);
 
-int send_response(client_node *cur_client);
+void server_read_file(void *cur_task);
 
-struct timeval burst_init(struct timeval *last_fill, 
-                          const client_list *list_of_clients);
+int server_send_response(client_node *cur_client);
 
-void recv_thread_signals(server *r_server);
+void server_recv_thread_signals(server *r_server);
 
-void process_thread_signals(server *r_server);
+void server_process_thread_signals(server *r_server);
 
-int process_read_file(client_node *client, server *r_server);
+int server_process_read_file(client_node *client, server *r_server);
 
 #endif

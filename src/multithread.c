@@ -28,7 +28,7 @@ static void *threadpool_thread(void *cur_threadpool)
       break;
 
     task = pool->queue->head;
-    remove_task_f_list(pool->queue->head, pool->queue);
+    task_node_remove(pool->queue->head, pool->queue);
 
     pthread_mutex_unlock(&(pool->lock));
 
@@ -41,7 +41,7 @@ static void *threadpool_thread(void *cur_threadpool)
                         (struct sockaddr *) &pool->main_t_address,
                         sizeof(struct sockaddr_un));
 
-    free_task_node(task);
+    task_node_free(task);
   }
   
   pthread_mutex_unlock(&(pool->lock));
@@ -115,9 +115,9 @@ int threadpool_add(void (*function)(void *), void *argument,
   if (pthread_mutex_lock(&(pool->lock)))
     return -1;
 
-  if(!(new_node = alloc_task_node(function, argument)))
+  if(!(new_node = task_node_alloc(function, argument)))
     return -1;
-  append_task_to_list(new_node, pool->queue);
+  task_node_append(new_node, pool->queue);
 
   if (pthread_cond_signal(&(pool->notify)))
     return -1;
@@ -175,7 +175,7 @@ int threadpool_destroy(threadpool *pool)
  * \return NULL Caso haja erro
  * \return task_node Caso ok
  */
-task_node *alloc_task_node(void (*function)(void *), void *argument)
+task_node *task_node_alloc(void (*function)(void *), void *argument)
 {
   task_node *new_node = NULL;
   
@@ -195,7 +195,7 @@ task_node *alloc_task_node(void (*function)(void *), void *argument)
  * \return -1 Caso haja erro
  * \return 0 Caso ok
  */
-int free_task_node(task_node *node)
+int task_node_free(task_node *node)
 {
   if (!node)
     return -1;
@@ -209,7 +209,7 @@ int free_task_node(task_node *node)
  * \param[in] new_node O novo no a ser adicionado
  * \param[out] queue A lista
  */
-void append_task_to_list(task_node *new_node, task_list *queue)
+void task_node_append(task_node *new_node, task_list *queue)
 {
   task_node *last_node = NULL;
 
@@ -222,7 +222,7 @@ void append_task_to_list(task_node *new_node, task_list *queue)
       ;
 
     last_node->next = new_node;
-    new_node->before = last_node;
+    new_node->prev = last_node;
   }
 
   queue->size++;
@@ -236,7 +236,7 @@ void append_task_to_list(task_node *new_node, task_list *queue)
  * \return -1 Caso haja erro
  * \return 0 Caso ok
  */
-int remove_task_f_list(task_node *node, task_list *queue)
+int task_node_remove(task_node *node, task_list *queue)
 {
   if (!node || !queue->size)
     return -1;
@@ -246,10 +246,10 @@ int remove_task_f_list(task_node *node, task_list *queue)
   else
   {
     if (node->next)
-      node->next->before = node->before;
+      node->next->prev = node->prev;
 
-    if (node->before)
-      node->before->next = node->next;
+    if (node->prev)
+      node->prev->next = node->next;
   }
 
   queue->size--;
