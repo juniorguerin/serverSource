@@ -9,26 +9,13 @@
 server r_server; 
 
 int main(int argc, const char **argv)
-{  
-  if (0 > server_init(&r_server))
+{
+  if (0 > server_init(argc, argv, &r_server))
   {
-    fprintf(stderr, "init_server");
+    fprintf(stderr, "server_init");
     goto error;
   }
 
-  if (0 > server_parse_arguments(argc, argv, &r_server))
-  {
-    fprintf(stderr, "usage: <root> <port> <velocity>\n");
-    goto error;
-  }
-
-  if (0 > (r_server.listenfd = server_create_listenfd(&r_server)) ||
-      0 > (r_server.l_socket = server_create_local_socket()))
-  {
-    fprintf(stderr, "%s\n", strerror(errno));
-    goto error;
-  }
- 
   while (1)
   {
     client_node *cur_client = NULL;

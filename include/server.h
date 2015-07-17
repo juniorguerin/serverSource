@@ -146,15 +146,7 @@ typedef struct server_
   client_node* cli_signaled[SIGNAL_MAX]; /*!< Vetor de sinalizacao */
 } server;
 
-int server_parse_arguments(int argc, const char *argv[], 
-                           server *r_server);
-
-int server_client_remove(client_node **client, 
-                         client_list *list_of_clients); 
-
-int server_create_listenfd(const server *r_server);
-
-int server_create_local_socket();
+int server_init(int argc, const char **argv, server *r_server);
 
 void server_select_analysis(server *r_server, 
                             struct timeval **timeout,
@@ -162,7 +154,8 @@ void server_select_analysis(server *r_server,
 
 int server_make_connection(server *r_server);
 
-int server_init(server *r_server);
+int server_client_remove(client_node **client,
+                         client_list *list_of_clients);
 
 int server_recv_client_request(int bytes_to_receive,
                                client_node *cur_client);

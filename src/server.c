@@ -208,6 +208,119 @@ static int server_init_sets(server *r_server)
   return transmission;
 }
 
+/*! \brief Verifica os argumentos passados para o servidor
+ *
+ * \param[in] argc Numero de argumentos
+ * \param[in] argv Argumentos recebidos com informacoes de porta e root
+ * \param[out] r_server Estrutura do servidor, para determinar a porta de
+ * escuta
+ *
+ * \return -1 caso algum erro tenha sido detectado
+ * \return 0 caso OK
+ */
+static int server_parse_arguments(int argc, const char *argv[],
+                                  server *r_server)
+{
+  char *endptr = NULL;
+  int arg_len = 0;
+
+  if (argc != 4)
+    return -1;
+
+  if (ROOT_LEN <= (arg_len = strlen(argv[1])))
+    return -1;
+
+  if (access(argv[1], F_OK))
+    return -1;
+  strncpy(r_server->serv_root, argv[1], ROOT_LEN - 1);
+
+  if (PORT_LEN <= (arg_len = strlen(argv[2])))
+    return -1;
+  r_server->listen_port = strtol(argv[2], &endptr, NUMBER_BASE);
+  if (endptr - argv[2] < arg_len)
+    return -1;
+
+  if (VEL_LEN <= (arg_len = strlen(argv[3])))
+    return -1;
+  r_server->velocity = strtol(argv[3], &endptr, NUMBER_BASE);
+  if (endptr - argv[3] < arg_len)
+    return -1;
+
+  return 0;
+}
+
+/*! \brief Cria o socket para escuta em porta passada como parametro
+ *
+ * \param[in] r_server Estrutura do servidor, para usar a porta de escuta
+ *
+ * \return -1 Caso ocorra algum erro
+ * \return listen_socket Caso esteja ok
+ */
+static int server_create_listenfd(const server *r_server)
+{
+  struct sockaddr_in servaddr;
+  int listen_socket;
+  int enabled = 1;
+
+  if (0 > (listen_socket = socket(AF_INET, SOCK_STREAM, 0)))
+    return -1;
+
+  if (0 > setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &enabled,
+                     sizeof(int)))
+    goto error;
+
+  memset(&servaddr, 0, sizeof(servaddr));
+  servaddr.sin_family = AF_INET;
+  servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+  servaddr.sin_port = htons(r_server->listen_port);
+
+  if (0 > bind(listen_socket, (struct sockaddr *) &servaddr,
+      sizeof(servaddr)))
+    goto error;
+
+  if (0 > listen(listen_socket, LISTEN_BACKLOG))
+    goto error;
+
+  return listen_socket;
+
+error:
+  if (0 > listen_socket)
+    close(listen_socket);
+
+  return -1;
+}
+
+/*! \brief Cria o socket local com base no nome guardado em um define
+ *
+ * \return -1 Caso ocorra algum erro
+ * \return local_listen_socket Caso esteja ok
+ */
+static int server_create_local_socket()
+{
+  struct sockaddr_un servaddr;
+  int l_socket;
+
+  if (0 > (l_socket = socket(AF_UNIX, SOCK_DGRAM, 0)))
+    return -1;
+
+  bzero(&servaddr, sizeof(servaddr));
+  servaddr.sun_family = AF_UNIX;
+  strcpy(servaddr.sun_path, LSOCK_NAME);
+
+  unlink(LSOCK_NAME);
+  if (0 > bind(l_socket, (struct sockaddr *)&servaddr,
+               sizeof(servaddr)))
+    goto error;
+
+  return l_socket;
+
+error:
+  if (0 > l_socket)
+    close(l_socket);
+
+  return -1;
+}
+
 /*! \brief Gera o header da resposta ao cliente se for necessario
  *
  * \param[in] cliente Estrutura que contem todas as informacoes sobre o cliente
@@ -326,118 +439,6 @@ int client_node_pop(client_node *client, client_list *l_clients)
   return 0;
 }
 
-/*! \brief Verifica os argumentos passados para o servidor
- *
- * \param[in] argc Numero de argumentos
- * \param[in] argv Argumentos recebidos com informacoes de porta e root
- * \param[out] r_server Estrutura do servidor, para determinar a porta de 
- * escuta
- *
- * \return -1 caso algum erro tenha sido detectado
- * \return 0 caso OK
- */
-int server_parse_arguments(int argc, const char *argv[], server *r_server)
-{
-  char *endptr = NULL;
-  int arg_len = 0;
-
-  if (argc != 4)
-    return -1;
-
-  if (ROOT_LEN <= (arg_len = strlen(argv[1])))
-    return -1;
-
-  if (access(argv[1], F_OK))
-    return -1;
-  strncpy(r_server->serv_root, argv[1], ROOT_LEN - 1);
-  
-  if (PORT_LEN <= (arg_len = strlen(argv[2])))
-    return -1;
-  r_server->listen_port = strtol(argv[2], &endptr, NUMBER_BASE);
-  if (endptr - argv[2] < arg_len)
-    return -1;
-  
-  if (VEL_LEN <= (arg_len = strlen(argv[3])))
-    return -1;
-  r_server->velocity = strtol(argv[3], &endptr, NUMBER_BASE);
-  if (endptr - argv[3] < arg_len)
-    return -1;
-
-  return 0;
-}
-
-/*! \brief Cria o socket para escuta em porta passada como parametro
- *
- * \param[in] r_server Estrutura do servidor, para usar a porta de escuta
- *
- * \return -1 Caso ocorra algum erro
- * \return listen_socket Caso esteja ok
- */
-int server_create_listenfd(const server *r_server)
-{
-  struct sockaddr_in servaddr;
-  int listen_socket;
-  int enabled = 1;
-
-  if (0 > (listen_socket = socket(AF_INET, SOCK_STREAM, 0)))
-    return -1;
-  
-  if (0 > setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &enabled,
-                     sizeof(int)))
-    goto error;
-  
-  memset(&servaddr, 0, sizeof(servaddr));
-  servaddr.sin_family = AF_INET;
-  servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-  servaddr.sin_port = htons(r_server->listen_port);
-  
-  if (0 > bind(listen_socket, (struct sockaddr *) &servaddr,
-      sizeof(servaddr)))
-    goto error;
-
-  if (0 > listen(listen_socket, LISTEN_BACKLOG))
-    goto error;
-
-  return listen_socket;
-
-error:
-  if (0 > listen_socket)
-    close(listen_socket);
-  
-  return -1;
-}
-
-/*! \brief Cria o socket local com base no nome guardado em um define
- *
- * \return -1 Caso ocorra algum erro
- * \return local_listen_socket Caso esteja ok
- */
-int server_create_local_socket()
-{
-  struct sockaddr_un servaddr;
-  int l_socket;
-
-  if (0 > (l_socket = socket(AF_UNIX, SOCK_DGRAM, 0)))
-    return -1;
-  
-  bzero(&servaddr, sizeof(servaddr));
-  servaddr.sun_family = AF_UNIX;
-  strcpy(servaddr.sun_path, LSOCK_NAME);
-
-  unlink(LSOCK_NAME);
-  if (0 > bind(l_socket, (struct sockaddr *)&servaddr, 
-               sizeof(servaddr)))
-    goto error;
-
-  return l_socket;
-
-error:
-  if (0 > l_socket)
-    close(l_socket);
-
-  return -1;
-}
-
 /*! \brief Aceita novas conexoes e aloca no vetor de clientes
  *
  * \param[in] r_server A estrutura servidor para a conexao de um cliente
@@ -502,19 +503,25 @@ int server_client_remove(client_node **cur_client,
   return 0;
 }
 
-/*! \brief Inicializa a estrutura r_server
+/*! \brief Procedimentos para inicializacao do servidor: inicializa variaveis,
+ * cria os sockets e inicia o pool de threads
  *
+ * \param[in] argc Numero de argumentos recebidos na funcao main
+ * \param[in] argv Os argumentos recebidos na chamada da funcao main
  * \param[out] r_server A estrutura a ser inicializada
  *
  * \return 0 Caso ok
- * \return -1 Caso haja erro de iniciacao
+ * \return -1 Caso haja algum erro
  */
-int server_init(server *r_server)
+int server_init(int argc, const char **argv, server *r_server)
 {
   memset(r_server, 0, sizeof(*r_server));
   r_server->maxfd_number = -1;
 
-  if (0 > threadpool_init(LSOCK_NAME, &r_server->thread_pool))
+  if (0 > server_parse_arguments(argc, argv, r_server) ||
+      0 > (r_server->listenfd = server_create_listenfd(r_server)) ||
+      0 > (r_server->l_socket = server_create_local_socket()) ||
+      0 > threadpool_init(LSOCK_NAME, &r_server->thread_pool))
     return -1;
   
   return 0;
@@ -646,11 +653,13 @@ void server_read_file(void *c_client)
  */
 int server_process_read_file(client_node *client, server *r_server)
 {
-  int bytes_to_read; 
+  int bytes_to_read;
+  int not_accept_flags = 0;
 
-  if (client->status & PENDING_DATA || client->status & FINISHED ||
-      client->status & SIGNAL_WAIT || client->status & WRITE_HEADER ||
-      !client->bucket.transmission)
+  not_accept_flags = PENDING_DATA | FINISHED | SIGNAL_WAIT |
+                     WRITE_HEADER;
+
+  if (client->status & not_accept_flags || !client->bucket.transmission)
     return 0;
   
   bytes_to_read = BUFFER_LEN;
@@ -724,19 +733,15 @@ void server_recv_thread_signals(server *r_server)
   int cont;
   int b_recv;
   char signal_str[SIGNAL_LEN];
-  socklen_t address_len;
   
   memset(signal_str, 0, sizeof(signal_str));
   memset(r_server->cli_signaled, 0, sizeof(r_server->cli_signaled));
-  address_len = sizeof(r_server->thread_pool.main_t_address);
 
   cont = -1;
   while (++cont < SIGNAL_MAX)
   {
-    b_recv = recvfrom(r_server->l_socket, signal_str, SIGNAL_LEN,
-                      MSG_DONTWAIT, (struct sockaddr *) 
-                      &r_server->thread_pool.main_t_address,
-                      &address_len);
+    b_recv = recv(r_server->l_socket, signal_str, SIGNAL_LEN,
+                  MSG_DONTWAIT);
 
     if (b_recv <= 0)
       break;
@@ -764,9 +769,11 @@ void server_process_thread_signals(server *r_server)
   while (r_server->cli_signaled[cont])
   {
     client_node *cur_client = r_server->cli_signaled[cont];
-
     if (cur_client->task_st == ERROR)
-      server_client_remove(&cur_client, &r_server->l_clients);
+    {
+      client_node_pop(cur_client, &r_server->l_clients);
+      client_node_free(cur_client);
+    }
     else
       cur_client->status = cur_client->status & (~SIGNAL_WAIT);
 

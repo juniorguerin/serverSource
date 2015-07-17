@@ -43,7 +43,7 @@ int task_node_free(task_node *node);
 
 void task_node_append(task_node *new_node, task_list *queue);
 
-int task_node_remove(task_node *node, task_list *queue);
+task_node *task_node_pop_first(task_list *queue);
 
 typedef struct threadpool_ {
   pthread_mutex_t lock; /*<! Variavel para mutex */
@@ -51,10 +51,7 @@ typedef struct threadpool_ {
   pthread_t *threads; /*<! Array de threads */
   task_list *queue; /*<! Array de queue */
   int shut_down; /*<! Flag para encerramento */
-  int thread_count; /*<! Numero de threads */
-  int queue_size; /*<! Tamanho da queue */
   int l_socket; /*<! Socket local */
-  struct sockaddr_un main_t_address; /*<! Endereco thread principal */
 } threadpool;
 
 int threadpool_init(const char *lsocket_name, threadpool *pool);
