@@ -66,8 +66,7 @@ int main(int argc, const char **argv)
           continue;
         }
 
-        if (cur_client->status & REQUEST_RECEIVED)
-          server_verify_request(r_server.serv_root, cur_client);
+        server_verify_request(r_server.serv_root, cur_client);
 
         if (0 >= --nready)
           break;

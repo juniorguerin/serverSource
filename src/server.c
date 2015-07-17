@@ -471,6 +471,8 @@ int server_make_connection(server *r_server)
 
   client_node_append(new_client, &r_server->l_clients);
   bucket_init(r_server->velocity, &new_client->bucket);
+  new_client->status = READ_REQUEST;
+
   r_server->maxfd_number = MAX(connfd, r_server->maxfd_number);
 
   return 0;
@@ -562,7 +564,6 @@ int server_recv_client_request(int bytes_to_receive,
     return -1;
   }
   
-  //bucket_withdraw(bytes_received, &cur_client->bucket);
   cur_client->pos_buf += bytes_received;
   return 0; 
 }
@@ -576,17 +577,19 @@ int server_read_client_request(client_node *cur_client)
 {
   int bytes_to_receive;
 
+  if (!(cur_client->status & READ_REQUEST))
+    return 0;
+
   bytes_to_receive = BUFFER_LEN - cur_client->pos_buf - 1;
-  /*if (cur_client->bucket.rate < bytes_to_receive)
-    bytes_to_receive = cur_client->bucket.remain_tokens;*/
   
   if (0 > server_recv_client_request(bytes_to_receive, cur_client))
     return -1;
 
-  if (!server_verify_double_line(cur_client->buffer))
-    cur_client->status = cur_client->status & (~REQUEST_RECEIVED);
-  else
+  if (server_verify_double_line(cur_client->buffer))
+  {
+    cur_client->status = cur_client->status & (~READ_REQUEST);
     cur_client->status = cur_client->status | REQUEST_RECEIVED;
+  }
 
   return 0; 
 }
@@ -603,13 +606,21 @@ void server_verify_request(char *serv_root, client_node *cur_client)
   char resource[RESOURCE_LEN + 1];
   char protocol[PROTOCOL_LEN + 1];
 
-  server_extr_req_params(cur_client, method, resource, protocol);  
-  server_verify_cli_protocol(protocol, cur_client);
-  server_verify_cli_method(method, cur_client);
-  server_verify_cli_resource(resource, serv_root, cur_client);
+  if (cur_client->status & REQUEST_RECEIVED)
+  {
+    server_extr_req_params(cur_client, method, resource, protocol);
+    server_verify_cli_protocol(protocol, cur_client);
+    server_verify_cli_method(method, cur_client);
+    server_verify_cli_resource(resource, serv_root, cur_client);
 
-  cur_client->status = cur_client->status & (~REQUEST_RECEIVED);
-  cur_client->status = cur_client->status | WRITE_HEADER;
+    cur_client->status = cur_client->status & (~REQUEST_RECEIVED);
+
+    if (cur_client->method == GET)
+      cur_client->status = cur_client->status | WRITE_HEADER;
+
+    if (cur_client->method == PUT)
+      cur_client->status = cur_client->status | READ_DATA;
+  }
 }
 
 /*! \brief Funcao que le o arquivo solicitado pelo cliente

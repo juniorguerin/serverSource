@@ -53,13 +53,14 @@
 #define LSOCK_NAME "./server_treinamento"
 #define LSOCK_NAME_LEN 64
 
-#define PENDING_DATA 0x01
+#define READ_REQUEST 0x01
 #define REQUEST_RECEIVED 0x02
 #define WRITE_HEADER 0x04
 #define WRITE_DATA 0x08
 #define READ_DATA 0x10
 #define SIGNAL_WAIT 0x20
-#define FINISHED 0x40
+#define PENDING_DATA 0x40
+#define FINISHED 0x80
 
 extern const char *supported_methods[];
 typedef enum http_methods_
