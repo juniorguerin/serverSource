@@ -29,14 +29,13 @@ static void *threadpool_thread(void *cur_threadpool)
       break;
 
     task = pool->queue->head;
-    task_node_remove(pool->queue->head, pool->queue);
+    task_node_remove(task, pool->queue);
 
     pthread_mutex_unlock(&(pool->lock));
 
-    (*(task->function))(task);
+    (*(task->function))(task->argument);
 
-    sprintf(signal_str, "%d %d %d", task->sockfd, task->task_kd, 
-            task->task_st);
+    sprintf(signal_str, "%p", task->argument);
     bytes_sent = sendto(pool->l_socket, signal_str, SIGNAL_LEN, 0,
                         (struct sockaddr *) &pool->main_t_address,
                         sizeof(struct sockaddr_un));

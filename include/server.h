@@ -50,7 +50,6 @@
 #define STR_METHOD_LEN STR(METHOD_LEN)
 #define STR_RESOURCE_LEN STR(RESOURCE_LEN)
 #define SIGNAL_MAX 128
-#define SIGNAL_COL 3
 #define LSOCK_NAME "./server_treinamento"
 #define LSOCK_NAME_LEN 64
 
@@ -94,6 +93,7 @@ typedef struct client_node_
   char *buffer; /*!< Buffer do cliente */
   int pos_buf; /*!< Posicao da escrita no buffer */
   int b_to_transfer; /*!< Bytes a transferir */
+  task_status task_st; /*!< Status da tarefa do cliente */
   unsigned char status; /*!< Flags para o estado do cliente */
   http_methods method; /*!< Metodo usado na request */
   http_protocols protocol; /*!< Protocolo usado na request */
@@ -143,7 +143,7 @@ typedef struct server_
   unsigned int velocity; /*!< Velocidade de conexao */
   struct timeval last_burst; /*!< Ultimo inicio de burst */
   threadpool thread_pool; /*!< Pool de threads */
-  long signals[SIGNAL_MAX][SIGNAL_COL]; /*!< Vetor de sinalizacao */
+  client_node* cli_signaled[SIGNAL_MAX]; /*!< Vetor de sinalizacao */
 } server;
 
 int server_parse_arguments(int argc, const char *argv[], 
@@ -164,16 +164,16 @@ int server_make_connection(server *r_server);
 
 int server_init(server *r_server);
 
-int server_read_client_input(int bytes_to_receive, 
-                             client_node *cur_client);
+int server_recv_client_request(int bytes_to_receive,
+                               client_node *cur_client);
 
-int server_recv_client_msg(client_node *cur_client);
+int server_read_client_request(client_node *cur_client);
 
 void server_verify_request(char *serv_root, client_node *cur_client);
 
-int server_send_header(client_node *cur_client);
+int server_build_header(client_node *cur_client);
 
-void server_read_file(void *cur_task);
+void server_read_file(void *cur_client);
 
 int server_send_response(client_node *cur_client);
 

@@ -13,32 +13,21 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-#define THREAD_NUM 4
-#define SIGNAL_LEN 6
+#define THREAD_NUM 1
+#define SIGNAL_LEN 65
 
 typedef enum task_status_
 {
+  ERROR,
   MORE_DATA,
   FINISHED,
-  ERROR,
   NUM_TASK_STATUS
 } task_status;
-
-typedef enum task_kind_
-{
-  READ,
-  WRITE,
-  NUM_TASK_KIND
-} task_kind;
 
 typedef struct task_node_ 
 {
   void (*function)(void *); /*<! Ponteiro para a funcao da tarefa */
   void *argument; /*<! Argumento passado para a funcao */
-  task_status task_st; /*<! Status da tarefa */
-  task_kind task_kd; /*<! Tipo de tarefa */
-  int b_to_transfer; /*<! Bytes a transferir */
-  int sockfd; /*<! Socket do cliente */
   struct task_node_ *next; /*<! Proximo elemento da lista */
   struct task_node_ *prev; /*<! Elemento anterior */
 } task_node;
