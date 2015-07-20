@@ -689,7 +689,10 @@ void server_write_file(void *c_client)
                                 *pos_buf - *begin_file, file)))
     *task_st = ERROR;
   else
+  {
+    *begin_file = 0;
     *task_st = MORE_DATA;
+  }
 }
 
 /* \brief Realiza verificacoes para a escrita do arquivo e coloca a tarefa no
@@ -791,7 +794,7 @@ int server_recv_response(client_node *client)
   client->status = client->status & (~PENDING_DATA);
 
   if (b_received < b_to_receive)
-    client->status = client->status | FINISHED;
+    client->status = client->status | WRITE_HEADER;
 
   return 0;
 }
