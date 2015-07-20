@@ -49,7 +49,6 @@
 #define STR_PROTOCOL_LEN STR(PROTOCOL_LEN)
 #define STR_METHOD_LEN STR(METHOD_LEN)
 #define STR_RESOURCE_LEN STR(RESOURCE_LEN)
-#define SIGNAL_MAX 128
 #define LSOCK_NAME "./server_treinamento"
 #define LSOCK_NAME_LEN 64
 
@@ -93,6 +92,7 @@ typedef struct client_node_
   int sockfd; /*!< Socket de conexao */
   char *buffer; /*!< Buffer do cliente */
   int pos_buf; /*!< Posicao da escrita no buffer */
+  int begin_file; /*!< Comeco do arquivo no buffer */
   int b_to_transfer; /*!< Bytes a transferir */
   task_status task_st; /*!< Status da tarefa do cliente */
   unsigned char status; /*!< Flags para o estado do cliente */
@@ -144,7 +144,7 @@ typedef struct server_
   unsigned int velocity; /*!< Velocidade de conexao */
   struct timeval last_burst; /*!< Ultimo inicio de burst */
   threadpool thread_pool; /*!< Pool de threads */
-  client_node* cli_signaled[SIGNAL_MAX]; /*!< Vetor de sinalizacao */
+  client_node* cli_signaled[FD_SETSIZE]; /*!< Vetor de sinalizacao */
 } server;
 
 int server_init(int argc, const char **argv, server *r_server);

@@ -602,7 +602,7 @@ int server_read_client_request(client_node *cur_client)
 
   if ((end_header = server_verify_double_line(cur_client->buffer)))
   {
-    cur_client->pos_buf = cur_client->buffer - end_header;
+    cur_client->begin_file = cur_client->buffer - end_header;
     cur_client->status = cur_client->status & (~READ_REQUEST);
     cur_client->status = cur_client->status | REQUEST_RECEIVED;
   }
@@ -682,10 +682,11 @@ void server_write_file(void *c_client)
   char *buffer = client->buffer;
   FILE *file = client->file;
   int *pos_buf = &client->pos_buf;
+  int *begin_file = &client->begin_file;
   task_status *task_st = &client->task_st;
 
-  if (0 >= (bytes_read = fwrite(buffer, sizeof(char),
-                                *pos_buf, file)))
+  if (0 >= (bytes_read = fwrite(buffer + *begin_file, sizeof(char),
+                                *pos_buf - *begin_file, file)))
     *task_st = ERROR;
   else
     *task_st = MORE_DATA;
@@ -855,7 +856,7 @@ void server_recv_thread_signals(server *r_server)
   memset(r_server->cli_signaled, 0, sizeof(r_server->cli_signaled));
 
   cont = -1;
-  while (++cont < SIGNAL_MAX)
+  while (++cont < FD_SETSIZE)
   {
     b_recv = recv(r_server->l_socket, signal_str, SIGNAL_LEN,
                   MSG_DONTWAIT);
