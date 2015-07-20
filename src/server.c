@@ -356,6 +356,14 @@ int server_build_header(client_node *cur_client)
 
   cur_client->pos_buf = printf_return;
 
+  if (cur_client->status & READ_DATA)
+  {
+    if (0 != server_send_response(cur_client))
+      return -1;
+    else
+      cur_client->status = cur_client->status & FINISHED;
+  }
+
   return 0;
 }
 
@@ -582,6 +590,7 @@ int server_recv_client_request(int bytes_to_receive,
 int server_read_client_request(client_node *cur_client)
 {
   int bytes_to_receive;
+  char *end_header = NULL;
 
   if (!(cur_client->status & READ_REQUEST))
     return 0;
@@ -591,8 +600,9 @@ int server_read_client_request(client_node *cur_client)
   if (0 > server_recv_client_request(bytes_to_receive, cur_client))
     return -1;
 
-  if ((cur_client->pos_buf = server_verify_double_line(cur_client->buffer)))
+  if ((end_header = server_verify_double_line(cur_client->buffer)))
   {
+    cur_client->pos_buf = cur_client->buffer - end_header;
     cur_client->status = cur_client->status & (~READ_REQUEST);
     cur_client->status = cur_client->status | REQUEST_RECEIVED;
   }
@@ -659,6 +669,55 @@ void server_read_file(void *c_client)
   }
 }
 
+/*! \brief Funcao que escreve o arquivo solicitado pelo cliente
+ *
+ * \param[out] task Task com informacoes do cliente como argumento
+ *
+ */
+void server_write_file(void *c_client)
+{
+  client_node *client = (client_node *) c_client;
+  int bytes_read;
+
+  char *buffer = client->buffer;
+  FILE *file = client->file;
+  int *pos_buf = &client->pos_buf;
+  task_status *task_st = &client->task_st;
+
+  if (0 >= (bytes_read = fwrite(buffer, sizeof(char),
+                                *pos_buf, file)))
+    *task_st = ERROR;
+  else
+    *task_st = MORE_DATA;
+}
+
+/* \brief Realiza verificacoes para a escrita do arquivo e coloca a tarefa no
+ * pool de threads
+ *
+ * \param[out] client O cliente correspondente
+ * \param[out] r_server A estrutura do servidor
+ *
+ * \return 0 Caso ok
+ * \return -1 Caso haja erro ao colocar a tarefa para as threads
+ */
+int server_process_write_file(client_node *client, server *r_server)
+{
+  int not_accept_flags = 0;
+
+  not_accept_flags = PENDING_DATA | FINISHED | SIGNAL_WAIT |
+                     WRITE_HEADER;
+
+  if (client->status & not_accept_flags)
+    return 0;
+
+  if(0 != threadpool_add(server_write_file, client,
+                         &r_server->thread_pool))
+    return -1;
+
+  client->status = client->status | SIGNAL_WAIT;
+  return 0;
+}
+
 /* \brief Realiza verificacoes para a leitura do arquivo e coloca a tarefa no
  * pool de threads
  *
@@ -689,6 +748,50 @@ int server_process_read_file(client_node *client, server *r_server)
     return -1;
 
   client->status = client->status | SIGNAL_WAIT;
+  return 0;
+}
+
+/*! \brief Recebe uma mensagem e armazenada em um buffer
+*
+ * \param[in] cur_client Variavel que armazena informacoes do cliente
+ *
+ * \return 0 Caso OK
+ * \return -1 Caso haja erro
+ */
+int server_recv_response(client_node *client)
+{
+  int b_received;
+  int b_to_receive;
+  int not_accept_flags;
+
+  not_accept_flags = FINISHED | SIGNAL_WAIT | WRITE_HEADER;
+
+  if (client->status & not_accept_flags || !client->bucket.transmission)
+    return 0;
+
+  b_to_receive = BUFFER_LEN;
+  if (client->bucket.remain_tokens < BUFFER_LEN)
+    b_to_receive = client->bucket.remain_tokens;
+  client->b_to_transfer = b_to_receive;
+
+  if(0 > (b_received = recv(client->sockfd, client->buffer, b_to_receive,
+                            MSG_NOSIGNAL | MSG_DONTWAIT)))
+  {
+    if (EINTR == errno || EAGAIN == errno || EWOULDBLOCK == errno)
+    {
+      client->status = client->status | PENDING_DATA;
+      return 0;
+    }
+
+    return -1;
+  }
+
+  bucket_withdraw(b_received, &client->bucket);
+  client->status = client->status & (~PENDING_DATA);
+
+  if (b_received < b_to_receive)
+    client->status = client->status | FINISHED;
+
   return 0;
 }
 

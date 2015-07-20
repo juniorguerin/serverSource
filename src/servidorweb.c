@@ -68,6 +68,14 @@ int main(int argc, const char **argv)
 
         server_verify_request(r_server.serv_root, cur_client);
 
+        if (0 != server_process_write_file(cur_client, &r_server) ||
+            0 != server_build_header(cur_client) ||
+            0 != server_recv_response(cur_client))
+        {
+          server_client_remove(&cur_client, &r_server.l_clients);
+          continue;
+        }
+
         if (0 >= --nready)
           break;
       }
@@ -82,12 +90,6 @@ int main(int argc, const char **argv)
           continue;
         }
 
-        if (cur_client->status & FINISHED)
-        {
-          server_client_remove(&cur_client, &r_server.l_clients);
-          continue;
-        }
-
         if (0 >= --nready)
           break;
       }
@@ -96,6 +98,12 @@ int main(int argc, const char **argv)
       {
           server_client_remove(&cur_client, &r_server.l_clients);
           continue;
+      }
+
+      if (cur_client->status & FINISHED)
+      {
+        server_client_remove(&cur_client, &r_server.l_clients);
+        continue;
       }
 
       cur_client = cur_client->next;

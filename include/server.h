@@ -162,19 +162,20 @@ int server_recv_client_request(int bytes_to_receive,
                                client_node *cur_client);
 
 int server_read_client_request(client_node *cur_client);
-
 void server_verify_request(char *serv_root, client_node *cur_client);
 
 int server_build_header(client_node *cur_client);
 
 void server_read_file(void *cur_client);
+void server_write_file(void *c_client);
 
+int server_recv_response(client_node *client);
 int server_send_response(client_node *cur_client);
 
 void server_recv_thread_signals(server *r_server);
-
 void server_process_thread_signals(server *r_server);
 
 int server_process_read_file(client_node *client, server *r_server);
+int server_process_write_file(client_node *client, server *r_server);
 
 #endif
