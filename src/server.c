@@ -68,7 +68,7 @@ static void server_verify_cli_resource(const char *resource,
   strncat(rel_path, "/", 1);
   strncat(rel_path, resource, PATH_MAX - ROOT_LEN - 1);
   realpath(rel_path, full_path);
-  if (strcmp(serv_root, full_path) > 0)
+  if (strncmp(serv_root, full_path, strlen(serv_root)))
     cur_client->resp_status = FORBIDDEN;
   else
   {
@@ -194,8 +194,7 @@ static int server_init_sets(server *r_server)
     cur_sockfd = cur_client->sockfd;
     r_server->maxfd_number = MAX(cur_sockfd, r_server->maxfd_number);
    
-    if (cur_client->status & WRITE_HEADER ||
-      cur_client->status & WRITE_DATA)
+    if (cur_client->status & WRITE_DATA)
       FD_SET(cur_sockfd, &r_server->sets.write_s);
     else
       FD_SET(cur_sockfd, &r_server->sets.read_s);
@@ -616,7 +615,7 @@ void server_verify_request(char *serv_root, client_node *cur_client)
     cur_client->status = cur_client->status & (~REQUEST_RECEIVED);
 
     if (cur_client->method == GET)
-      cur_client->status = cur_client->status | WRITE_HEADER;
+      cur_client->status = cur_client->status | WRITE_HEADER | WRITE_DATA;
 
     if (cur_client->method == PUT)
       cur_client->status = cur_client->status | READ_DATA;
@@ -718,20 +717,17 @@ int server_send_response(client_node *client)
   client->status = client->status & (~PENDING_DATA);
   client->pos_buf = 0;
 
-  if (client->task_st == (task_status) FINISHED)
-    client->status = client->status & FINISHED;
-
   if (client->status & WRITE_HEADER)
   {
+    client->status = client->status & (~WRITE_HEADER);
+
     if (client->resp_status != OK)
-      client->status = client->status & FINISHED;
-    else
-    {
-      client->status = client->status & (~WRITE_HEADER);
-      client->status = client->status | WRITE_DATA;
-    }
+      client->status = client->status | FINISHED;
   }
   
+  if (client->task_st == (task_status) FINISHED)
+    client->status = client->status | FINISHED;
+
   return 0;
 }
 
