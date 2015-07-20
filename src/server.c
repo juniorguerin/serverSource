@@ -12,15 +12,22 @@ const char *supported_protocols[] = {"HTTP/1.0", "HTTP/1.1"};
  *
  * \param[in] buffer Uma string contendo a mensagem
  *
- * \return 1 Caso tenha encontrado o fim da mensagem
- * \return 0 Caso nao tenha encontrado o fim da mensagem
+ * \return end_header Posicao onde encontrou o fim dos headers
+ * \return NULL Caso nao encontre o fim dos headers
  */
-static int server_verify_double_line(const char *buffer)
+static char *server_verify_double_line(const char *buffer)
 {
-  if (!strstr(buffer, "\r\n\r\n") && !strstr(buffer, "\n\n"))
-    return 0;
+  char *end_header = NULL;
+  char pattern1[] = {"\r\n\r\n"};
+  char pattern2[] = {"\n\n"};
+
+  if ((end_header = strstr(buffer, pattern1)))
+    return end_header + strlen(pattern1);
     
-  return 1;
+  if ((end_header = strstr(buffer, pattern2)))
+    return end_header + strlen(pattern2);
+
+  return end_header;
 }
 
 /*! \brief Verifica o metodo passado na requisicao do Cliente
