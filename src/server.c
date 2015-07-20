@@ -591,7 +591,7 @@ int server_read_client_request(client_node *cur_client)
   if (0 > server_recv_client_request(bytes_to_receive, cur_client))
     return -1;
 
-  if (server_verify_double_line(cur_client->buffer))
+  if ((cur_client->pos_buf = server_verify_double_line(cur_client->buffer)))
   {
     cur_client->status = cur_client->status & (~READ_REQUEST);
     cur_client->status = cur_client->status | REQUEST_RECEIVED;
