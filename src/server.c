@@ -79,11 +79,19 @@ static void server_verify_cli_resource(const char *resource,
     cur_client->resp_status = FORBIDDEN;
   else
   {
-    cur_client->file = fopen(full_path, "r");
-    if (!cur_client->file)
-      cur_client->resp_status = NOT_FOUND;
+    if (cur_client->method == GET)
+    {
+      cur_client->file = fopen(full_path, "r");
+      if (!cur_client->file)
+        cur_client->resp_status = NOT_FOUND;
+      else
+        cur_client->resp_status = OK;
+    }
     else
+    {
+      cur_client->file = fopen(full_path, "w");
       cur_client->resp_status = OK;
+    }
   }
 }
 
@@ -327,6 +335,38 @@ error:
   return -1;
 }
 
+/* \brief Funcao que atualiza o status do cliente apos enviar dados
+ *
+ * \param[out] client O cliente atualizado
+ */
+static void server_update_cli_status(client_node *client)
+{
+  client->status = client->status & (~PENDING_DATA);
+
+  if (client->status & READ_DATA)
+  {
+    client->status = 0;
+    client->status = client->status | FINISHED;
+  }
+
+  if (client->status & WRITE_HEADER)
+  {
+    client->status = client->status & (~WRITE_HEADER);
+
+    if (client->resp_status != OK)
+    {
+      client->status = 0;
+      client->status = client->status | FINISHED;
+    }
+  }
+
+  if (client->task_st == (task_status) FINISHED)
+  {
+    client->status = 0;
+    client->status = client->status | FINISHED;
+  }
+}
+
 /*! \brief Gera o header da resposta ao cliente se for necessario
  *
  * \param[in] cliente Estrutura que contem todas as informacoes sobre o cliente
@@ -355,14 +395,6 @@ int server_build_header(client_node *cur_client)
     return -1;
 
   cur_client->pos_buf = printf_return;
-
-  if (cur_client->status & READ_DATA)
-  {
-    if (0 != server_send_response(cur_client))
-      return -1;
-    else
-      cur_client->status = cur_client->status & FINISHED;
-  }
 
   return 0;
 }
@@ -565,7 +597,7 @@ int server_recv_client_request(int bytes_to_receive,
       return -1;
   }
   
-  if (BUFFER_LEN - 1 == cur_client->pos_buf)
+  if (REQUEST_SIZE - 1 == cur_client->pos_buf)
     return -1;
 
   if (0 > (bytes_received = recv(cur_client->sockfd, 
@@ -585,26 +617,25 @@ int server_recv_client_request(int bytes_to_receive,
 /*! \brief Verifica entrada de dados do client e determina quando a 
  *  mensagem chegou ao fim
  *
- * \param[out] cur_client A estrutura de _client
+ * \param[out] client A estrutura de _client
  */
-int server_read_client_request(client_node *cur_client)
+int server_read_client_request(client_node *client)
 {
   int bytes_to_receive;
-  char *end_header = NULL;
+  char *pos_header;
 
-  if (!(cur_client->status & READ_REQUEST))
+  if (!(client->status & READ_REQUEST))
     return 0;
 
-  bytes_to_receive = BUFFER_LEN - cur_client->pos_buf - 1;
-  
-  if (0 > server_recv_client_request(bytes_to_receive, cur_client))
+  bytes_to_receive = REQUEST_SIZE - client->pos_buf - 1;
+  if (0 > server_recv_client_request(bytes_to_receive, client))
     return -1;
 
-  if ((end_header = server_verify_double_line(cur_client->buffer)))
+  if ((pos_header = server_verify_double_line(client->buffer)))
   {
-    cur_client->begin_file = cur_client->buffer - end_header;
-    cur_client->status = cur_client->status & (~READ_REQUEST);
-    cur_client->status = cur_client->status | REQUEST_RECEIVED;
+    client->pos_header = pos_header - client->buffer;
+    client->status = client->status & (~READ_REQUEST);
+    client->status = client->status | REQUEST_RECEIVED;
   }
 
   return 0; 
@@ -616,26 +647,26 @@ int server_read_client_request(client_node *cur_client)
  * \param[in] serv_root Caminho do root do servidor
  * \param[out] cur_client Contem informacoes a respeito do cliente
  */
-void server_verify_request(char *serv_root, client_node *cur_client)
+void server_verify_request(char *serv_root, client_node *client)
 {
   char method[METHOD_LEN + 1];
   char resource[RESOURCE_LEN + 1];
   char protocol[PROTOCOL_LEN + 1];
 
-  if (cur_client->status & REQUEST_RECEIVED)
+  if (client->status & REQUEST_RECEIVED)
   {
-    server_extr_req_params(cur_client, method, resource, protocol);
-    server_verify_cli_protocol(protocol, cur_client);
-    server_verify_cli_method(method, cur_client);
-    server_verify_cli_resource(resource, serv_root, cur_client);
+    server_extr_req_params(client, method, resource, protocol);
+    server_verify_cli_protocol(protocol, client);
+    server_verify_cli_method(method, client);
+    server_verify_cli_resource(resource, serv_root, client);
 
-    cur_client->status = cur_client->status & (~REQUEST_RECEIVED);
+    client->status = client->status & (~REQUEST_RECEIVED);
 
-    if (cur_client->method == GET)
-      cur_client->status = cur_client->status | WRITE_HEADER | WRITE_DATA;
+    if (client->method == GET)
+      client->status = client->status | WRITE_HEADER | WRITE_DATA;
 
-    if (cur_client->method == PUT)
-      cur_client->status = cur_client->status | READ_DATA;
+    if (client->method == PUT)
+      client->status = client->status | READ_DATA;
   }
 }
 
@@ -677,22 +708,23 @@ void server_read_file(void *c_client)
 void server_write_file(void *c_client)
 {
   client_node *client = (client_node *) c_client;
-  int bytes_read;
-
+  int bytes_written;
   char *buffer = client->buffer;
   FILE *file = client->file;
   int *pos_buf = &client->pos_buf;
-  int *begin_file = &client->begin_file;
+  int *pos_header = &client->pos_header;
   task_status *task_st = &client->task_st;
 
-  if (0 >= (bytes_read = fwrite(buffer + *begin_file, sizeof(char),
-                                *pos_buf - *begin_file, file)))
+  bytes_written = fwrite(buffer + *pos_header, sizeof(char),
+                         *pos_buf - *pos_header, file);
+  if (0 > bytes_written)
     *task_st = ERROR;
   else
   {
-    *begin_file = 0;
+    *pos_buf = 0;
     *task_st = MORE_DATA;
-  }
+    *pos_header = 0;
+    }
 }
 
 /* \brief Realiza verificacoes para a escrita do arquivo e coloca a tarefa no
@@ -708,10 +740,9 @@ int server_process_write_file(client_node *client, server *r_server)
 {
   int not_accept_flags = 0;
 
-  not_accept_flags = PENDING_DATA | FINISHED | SIGNAL_WAIT |
-                     WRITE_HEADER;
+  not_accept_flags = PENDING_DATA | FINISHED | SIGNAL_WAIT;
 
-  if (client->status & not_accept_flags)
+  if (client->status & not_accept_flags || !client->pos_buf)
     return 0;
 
   if(0 != threadpool_add(server_write_file, client,
@@ -770,7 +801,8 @@ int server_recv_response(client_node *client)
 
   not_accept_flags = FINISHED | SIGNAL_WAIT | WRITE_HEADER;
 
-  if (client->status & not_accept_flags || !client->bucket.transmission)
+  if (client->status & not_accept_flags || !client->bucket.transmission ||
+      client->pos_buf)
     return 0;
 
   b_to_receive = BUFFER_LEN;
@@ -792,9 +824,13 @@ int server_recv_response(client_node *client)
 
   bucket_withdraw(b_received, &client->bucket);
   client->status = client->status & (~PENDING_DATA);
+  client->pos_buf = b_received;
 
   if (b_received < b_to_receive)
+  {
+    client->status = client->status | WRITE_DATA;
     client->status = client->status | WRITE_HEADER;
+  }
 
   return 0;
 }
@@ -828,20 +864,8 @@ int server_send_response(client_node *client)
   }
 
   bucket_withdraw(b_sent, &client->bucket);
-  client->status = client->status & (~PENDING_DATA);
   client->pos_buf = 0;
-
-  if (client->status & WRITE_HEADER)
-  {
-    client->status = client->status & (~WRITE_HEADER);
-
-    if (client->resp_status != OK)
-      client->status = client->status | FINISHED;
-  }
-  
-  if (client->task_st == (task_status) FINISHED)
-    client->status = client->status | FINISHED;
-
+  server_update_cli_status(client);
   return 0;
 }
 

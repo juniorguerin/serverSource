@@ -37,7 +37,7 @@
 #define STR(x) STR_(x)
 
 #define BUFFER_LEN BUFSIZ
-#define REQUEST_SIZE BUFSIZ
+#define REQUEST_SIZE 1024
 #define LISTEN_BACKLOG 512
 #define ROOT_LEN 2048
 #define NUMBER_BASE 10
@@ -92,7 +92,7 @@ typedef struct client_node_
   int sockfd; /*!< Socket de conexao */
   char *buffer; /*!< Buffer do cliente */
   int pos_buf; /*!< Posicao da escrita no buffer */
-  int begin_file; /*!< Comeco do arquivo no buffer */
+  int pos_header; /*!< Posicao do fim do header */
   int b_to_transfer; /*!< Bytes a transferir */
   task_status task_st; /*!< Status da tarefa do cliente */
   unsigned char status; /*!< Flags para o estado do cliente */

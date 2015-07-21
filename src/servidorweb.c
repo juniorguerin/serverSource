@@ -68,20 +68,15 @@ int main(int argc, const char **argv)
 
         server_verify_request(r_server.serv_root, cur_client);
 
-        if (0 != server_process_write_file(cur_client, &r_server) ||
-            0 != server_recv_response(cur_client) ||
-            0 != server_build_header(cur_client))
+        if (0 != server_recv_response(cur_client) ||
+            0 != server_process_write_file(cur_client, &r_server))
         {
           server_client_remove(&cur_client, &r_server.l_clients);
           continue;
         }
-
-        if (0 >= --nready)
-          break;
       }
      
       if (FD_ISSET(sockfd, &r_server.sets.write_s))
-      {
         if (0 != server_build_header(cur_client) ||
             0 != server_send_response(cur_client) ||
             0 != server_process_read_file(cur_client, &r_server))
@@ -89,10 +84,6 @@ int main(int argc, const char **argv)
           server_client_remove(&cur_client, &r_server.l_clients);
           continue;
         }
-
-        if (0 >= --nready)
-          break;
-      }
 
       if (FD_ISSET(sockfd, &r_server.sets.except_s))
       {
@@ -105,6 +96,9 @@ int main(int argc, const char **argv)
         server_client_remove(&cur_client, &r_server.l_clients);
         continue;
       }
+
+      if (0 >= --nready)
+        break;
 
       cur_client = cur_client->next;
     }
