@@ -76,6 +76,12 @@ static int server_verify_cli_resource(const char *resource,
   if (cur_client->resp_status)
     return -1;
 
+  if (verify_file_status(resource, &r_server->n_ready_files))
+  {
+    cur_client->resp_status = FORBIDDEN;
+    return -1;
+  }
+
   memset(full_path, 0, sizeof(full_path));
   memset(rel_path, 0, sizeof(rel_path));
 
@@ -100,12 +106,7 @@ static int server_verify_cli_resource(const char *resource,
     return -1;
   }
 
-  if (verify_file_status(cur_client->file, r_server->n_ready_files))
-  {
-    cur_client->resp_status = FORBIDDEN;
-    return -1;
-  }
-
+  cur_client->resp_status = OK;
   return 0;
 }
 
@@ -369,7 +370,7 @@ int server_process_cli_status(client_node *client, server *r_server)
     client->status = 0;
     client->status = client->status | FINISHED;
 
-    n_ready_file = file_node_pop(client->file, r_server->n_ready_files);
+    n_ready_file = file_node_pop(client->file, &r_server->n_ready_files);
     if (!n_ready_file)
       return -1;
 
@@ -700,10 +701,10 @@ int server_verify_request(server *r_server, client_node *client)
     if (client->resp_status == OK)
     {
       file_node *file_to_add;
-      file_to_add = file_node_allocate(client->file);
+      file_to_add = file_node_allocate(resource, client->file);
       if (!file_to_add)
         return -1;
-      file_node_append(file_to_add, r_server->n_ready_files);
+      file_node_append(file_to_add, &r_server->n_ready_files);
 
       client->status = client->status | READ_DATA;
     }
@@ -788,7 +789,8 @@ int server_process_write_file(client_node *client, server *r_server)
 
   not_accept_flags = PENDING_DATA | FINISHED | SIGNAL_WAIT;
 
-  if (client->status & not_accept_flags || !client->pos_buf)
+  if (client->status & not_accept_flags || !client->pos_buf ||
+      GET == client->method)
     return 0;
 
   if(0 != threadpool_add(server_write_file, client,
@@ -813,8 +815,7 @@ int server_process_read_file(client_node *client, server *r_server)
   int bytes_to_read;
   int not_accept_flags = 0;
 
-  not_accept_flags = PENDING_DATA | FINISHED | SIGNAL_WAIT |
-                     WRITE_HEADER;
+  not_accept_flags = PENDING_DATA | FINISHED | SIGNAL_WAIT;
 
   if (client->status & not_accept_flags || !client->bucket.transmission)
     return 0;
@@ -845,7 +846,7 @@ int server_recv_response(client_node *client)
   int b_to_receive;
   int not_accept_flags;
 
-  not_accept_flags = FINISHED | SIGNAL_WAIT | WRITE_HEADER;
+  not_accept_flags = FINISHED | SIGNAL_WAIT | WRITE_DATA;
 
   if (client->status & not_accept_flags || !client->bucket.transmission ||
       client->pos_buf)
@@ -1074,12 +1075,12 @@ void file_node_free(file_node *file)
 
 /*! \brief Aloca um novo elemento da estrutura de arquivos
  *
- * \param[in] file A referencia do arquivo
+ * \param[in] file_name A referencia do arquivo
  *
  * \return NULL caso haja erro de alocacao
- * \return file caso a estrutura seja alocada
+ * \return file_node caso a estrutura seja alocada
  */
-file_node *file_node_allocate(FILE *file)
+file_node *file_node_allocate(const char *file_name, FILE *file)
 {
   file_node *new_file = NULL;
 
@@ -1087,7 +1088,10 @@ file_node *file_node_allocate(FILE *file)
   if (!new_file)
     return NULL;
 
+  memset(new_file->file_name, 0, sizeof(*new_file->file_name));
+  strcpy(new_file->file_name, file_name);
   new_file->file = file;
+
   return new_file;
 }
 
@@ -1097,18 +1101,15 @@ file_node *file_node_allocate(FILE *file)
  * \param[out] l_files A lista de arquivos sendo modificados
  *
  * \return 0 Caso nao esteja sendo modificado
- * \return -1 Caso esteja sendo modificado
+ * \return 1 Caso esteja sendo modificado
  */
-int verify_file_status(FILE *file, file_list *l_files)
+int verify_file_status(const char *file_name, file_list *l_files)
 {
   file_node *cur_file;
 
-  for (cur_file = l_files->head; cur_file && cur_file->file != file;
-       cur_file = cur_file->next)
-    ;
+  for (cur_file = l_files->head; cur_file; cur_file = cur_file->next)
+    if (!strncmp(cur_file->file_name, file_name, strlen(file_name)))
+      return 1;
 
-  if (!cur_file)
-    return 0;
-
-  return -1;
+  return 0;
 }

@@ -123,7 +123,8 @@ void client_node_free(client_node *client);
 /*! \brief Arquivo sendo alterado / recebido */
 typedef struct file_node_
 {
-  FILE *file; /*!< Arquivo */
+  char file_name[RESOURCE_LEN]; /*!< Arquivo */
+  FILE *file; /*!< Descritor do arquivo */
   struct file_node_ *next;
   struct file_node_ *prev;
 } file_node;
@@ -139,9 +140,9 @@ void file_node_append(file_node *file, file_list *l_of_files);
 file_node *file_node_pop(FILE *file, file_list *l_files);
 
 void file_node_free(file_node *file);
-file_node *file_node_allocate(FILE *file);
+file_node *file_node_allocate(const char *file_name, FILE *file);
 
-int verify_file_status(FILE *file, file_list *l_files);
+int verify_file_status(const char *file_name, file_list *l_files);
 
 /*! \brief Guarda as variaveis do tipo fd_set vinculadas ao servidor
  */
@@ -165,7 +166,7 @@ typedef struct server_
   unsigned int velocity; /*!< Velocidade de conexao */
   struct timeval last_burst; /*!< Ultimo inicio de burst */
   threadpool thread_pool; /*!< Pool de threads */
-  file_list *n_ready_files; /*! Arquivos que estao sendo escritos */
+  file_list n_ready_files; /*! Arquivos que estao sendo escritos */
   client_node* cli_signaled[FD_SETSIZE]; /*!< Vetor de sinalizacao */
 } server;
 
