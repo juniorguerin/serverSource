@@ -114,13 +114,34 @@ typedef struct client_list_
 
 void client_node_append(client_node *client, 
                         client_list *list_of_clients);
-
 int client_node_pop(client_node *client, 
                     client_list *list_of_clients);
 
 client_node *client_node_allocate(int sockfd);
-
 void client_node_free(client_node *client);
+
+/*! \brief Arquivo sendo alterado / recebido */
+typedef struct file_node_
+{
+  FILE *file; /*!< Arquivo */
+  struct file_node_ *next;
+  struct file_node_ *prev;
+} file_node;
+
+/* \brief Lista de arquivos sendo alterado / recebido */
+typedef struct file_list_
+{
+  file_node *head; /* Primeiro arquivo */
+  int size; /* Tamanho da lista*/
+} file_list;
+
+void file_node_append(file_node *file, file_list *l_of_files);
+int file_node_pop(file_node *file, file_list *l_of_files);
+
+void file_node_free(file_node *file);
+file_node *file_node_allocate(FILE *file);
+
+int verify_file_status(FILE *file, file_list *l_files);
 
 /*! \brief Guarda as variaveis do tipo fd_set vinculadas ao servidor
  */
@@ -144,6 +165,7 @@ typedef struct server_
   unsigned int velocity; /*!< Velocidade de conexao */
   struct timeval last_burst; /*!< Ultimo inicio de burst */
   threadpool thread_pool; /*!< Pool de threads */
+  FILE* not_ready_files[FD_SETSIZE]; /*! Arquivos que estao em transferencia */
   client_node* cli_signaled[FD_SETSIZE]; /*!< Vetor de sinalizacao */
 } server;
 

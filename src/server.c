@@ -955,3 +955,106 @@ void server_select_analysis(server *r_server, struct timeval **timeout,
     *timeout = burst_rem_time;
   } 
 }
+
+/* \brief Adiciona um arquivo no final da lista de arquivos
+ *
+ * \param[in] file O arquivo a ser acrescentado
+ * \param[out] l_files A lista de arquivos
+ */
+void file_node_append(file_node *file, file_list *l_files)
+{
+  file_node *last_file = NULL;
+
+  if (!l_files->head)
+  {
+    l_files->head = file;
+    l_files->size++;
+  }
+  else
+  {
+    for (last_file = l_files->head; last_file->next;
+         last_file = last_file->next)
+      ;
+    last_file->next = file;
+    file->prev = last_file;
+    l_files->size++;
+  }
+}
+
+/* \brief Elimina a referencia de um arquivo dentro da lista
+ *
+ * \param[in] file O arquivo a ser retirado da lista
+ * \param[out] l_files A lista de arquivos
+ *
+ * \return -1 Caso erro
+ * \return 0 Caso OK
+ */
+int file_node_pop(file_node *file, file_list *l_files)
+{
+  if (!file || !l_files->size)
+    return -1;
+
+  if (file == l_files->head)
+    l_files->head = file->next;
+  else
+  {
+    if (file->next)
+      file->next->prev = file->prev;
+
+    if (file->prev)
+      file->prev->next = file->next;
+  }
+
+  l_files->size--;
+  return 0;
+}
+
+/*! \brief Libera um elemento da struct de arquivos
+ *
+ * \param[out] file O arquivo a ser removido
+ */
+void file_node_free(file_node *file)
+{
+  free(file);
+}
+
+/*! \brief Aloca um novo elemento da estrutura de arquivos
+ *
+ * \param[in] file A referencia do arquivo
+ *
+ * \return NULL caso haja erro de alocacao
+ * \return file caso a estrutura seja alocada
+ */
+file_node *file_node_allocate(FILE *file)
+{
+  file_node *new_file = NULL;
+
+  new_file = (file_node *) calloc(1, sizeof(file_node));
+  if (!new_file)
+    return NULL;
+
+  new_file->file = file;
+  return new_file;
+}
+
+/* \brief Verifica se um arquivo esta sendo alterado
+ *
+ * \param[in] file O arquivo a ser analisado
+ * \param[out] l_files A lista de arquivos sendo modificados
+ *
+ * \return 0 Caso nao esteja sendo modificado
+ * \return -1 Caso esteja sendo modificado
+ */
+int verify_file_status(FILE *file, file_list *l_files)
+{
+  file_node *cur_file;
+
+  for (cur_file = l_files->head; cur_file && cur_file->file != file;
+       cur_file = cur_file->next)
+    ;
+
+  if (!cur_file)
+    return 0;
+
+  return -1;
+}
