@@ -49,7 +49,7 @@
 #define STR_PROTOCOL_LEN STR(PROTOCOL_LEN)
 #define STR_METHOD_LEN STR(METHOD_LEN)
 #define STR_RESOURCE_LEN STR(RESOURCE_LEN)
-#define LSOCK_NAME "./server_treinamento"
+#define LSOCK_NAME "/home/junior/Documentos/server_treinamento"
 #define LSOCK_NAME_LEN 64
 
 #define READ_REQUEST 0x01
@@ -136,7 +136,7 @@ typedef struct file_list_
 } file_list;
 
 void file_node_append(file_node *file, file_list *l_of_files);
-int file_node_pop(file_node *file, file_list *l_of_files);
+file_node *file_node_pop(FILE *file, file_list *l_files);
 
 void file_node_free(file_node *file);
 file_node *file_node_allocate(FILE *file);
@@ -165,7 +165,7 @@ typedef struct server_
   unsigned int velocity; /*!< Velocidade de conexao */
   struct timeval last_burst; /*!< Ultimo inicio de burst */
   threadpool thread_pool; /*!< Pool de threads */
-  FILE* not_ready_files[FD_SETSIZE]; /*! Arquivos que estao em transferencia */
+  file_list *n_ready_files; /*! Arquivos que estao sendo escritos */
   client_node* cli_signaled[FD_SETSIZE]; /*!< Vetor de sinalizacao */
 } server;
 
@@ -184,7 +184,7 @@ int server_recv_client_request(int bytes_to_receive,
                                client_node *cur_client);
 
 int server_read_client_request(client_node *cur_client);
-void server_verify_request(char *serv_root, client_node *cur_client);
+int server_verify_request(server *r_server, client_node *client);
 
 int server_build_header(client_node *cur_client);
 
@@ -199,5 +199,7 @@ void server_process_thread_signals(server *r_server);
 
 int server_process_read_file(client_node *client, server *r_server);
 int server_process_write_file(client_node *client, server *r_server);
+
+int server_process_cli_status(client_node *client, server *r_server);
 
 #endif

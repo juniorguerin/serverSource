@@ -58,15 +58,23 @@ static void server_verify_cli_method(const char *method_str,
  *
  * \param[in] resource String extraida da requisicao do cliente
  * correspondente ao recurso
- * \param[in] serv_root Path do root do servidor
+ * \param[in] r_server O servidor
  * \param[out] cur_client O cliente em questao
+ *
+ * \return 0 Caso ok
+ * \return -1 Caso status de erro para a requisicao
  */
-static void server_verify_cli_resource(const char *resource, 
-                                       char *serv_root, 
-                                       client_node *cur_client)
+static int server_verify_cli_resource(const char *resource,
+                                      server *r_server,
+                                      client_node *cur_client)
 {
   char full_path[PATH_MAX];
   char rel_path[PATH_MAX];
+  char *serv_root = r_server->serv_root;
+
+  /* Caso status de erro para a mensagem, nao analisa resource */
+  if (cur_client->resp_status)
+    return -1;
 
   memset(full_path, 0, sizeof(full_path));
   memset(rel_path, 0, sizeof(rel_path));
@@ -76,23 +84,29 @@ static void server_verify_cli_resource(const char *resource,
   strncat(rel_path, resource, PATH_MAX - ROOT_LEN - 1);
   realpath(rel_path, full_path);
   if (strncmp(serv_root, full_path, strlen(serv_root)))
-    cur_client->resp_status = FORBIDDEN;
-  else
   {
-    if (cur_client->method == GET)
-    {
-      cur_client->file = fopen(full_path, "r");
-      if (!cur_client->file)
-        cur_client->resp_status = NOT_FOUND;
-      else
-        cur_client->resp_status = OK;
-    }
-    else
-    {
-      cur_client->file = fopen(full_path, "w");
-      cur_client->resp_status = OK;
-    }
+    cur_client->resp_status = FORBIDDEN;
+    return -1;
   }
+
+  if (cur_client->method == GET)
+    cur_client->file = fopen(full_path, "r");
+  else
+    cur_client->file = fopen(full_path, "w");
+
+  if (!cur_client->file)
+  {
+    cur_client->resp_status = NOT_FOUND;
+    return -1;
+  }
+
+  if (verify_file_status(cur_client->file, r_server->n_ready_files))
+  {
+    cur_client->resp_status = FORBIDDEN;
+    return -1;
+  }
+
+  return 0;
 }
 
 /*! \brief Funcao que analisa um codigo http e retorna a string do status
@@ -335,18 +349,31 @@ error:
   return -1;
 }
 
-/* \brief Funcao que atualiza o status do cliente apos enviar dados
+/* \brief Funcao que atualiza o status do cliente apos enviar dados e elimina
+ * arquivo de lista de arquivos em transferencia, caso esteja em PUT
  *
  * \param[out] client O cliente atualizado
+ * \param[out] r_server O servidor
+ *
+ * \return 0 Caso ok
+ * \return -1 Caso a referencia do arquivo a ser fechado esteja errada
  */
-static void server_update_cli_status(client_node *client)
+int server_process_cli_status(client_node *client, server *r_server)
 {
   client->status = client->status & (~PENDING_DATA);
 
   if (client->status & READ_DATA)
   {
+    file_node *n_ready_file;
+
     client->status = 0;
     client->status = client->status | FINISHED;
+
+    n_ready_file = file_node_pop(client->file, r_server->n_ready_files);
+    if (!n_ready_file)
+      return -1;
+
+    file_node_free(n_ready_file);
   }
 
   if (client->status & WRITE_HEADER)
@@ -365,6 +392,8 @@ static void server_update_cli_status(client_node *client)
     client->status = 0;
     client->status = client->status | FINISHED;
   }
+
+  return 0;
 }
 
 /*! \brief Gera o header da resposta ao cliente se for necessario
@@ -641,33 +670,50 @@ int server_read_client_request(client_node *client)
   return 0; 
 }
 
-/* \brief Faz analise da mensagem para identificar o metodo,
- * o procotolo e o recurso solicitado
+/* \brief Faz analise da mensagem para identificar o metodo,o procotolo e o
+ * recurso solicitado, além de alocar uso do arquivo caso seja metodo PUT
  *
- * \param[in] serv_root Caminho do root do servidor
+ * \param[in] r_server O servidor
  * \param[out] cur_client Contem informacoes a respeito do cliente
+ *
+ * \return 0 Caso ok
+ * \return -1 Caso erro de alocacao de arquivo em uso
  */
-void server_verify_request(char *serv_root, client_node *client)
+int server_verify_request(server *r_server, client_node *client)
 {
   char method[METHOD_LEN + 1];
   char resource[RESOURCE_LEN + 1];
   char protocol[PROTOCOL_LEN + 1];
 
-  if (client->status & REQUEST_RECEIVED)
+  if (!(client->status & REQUEST_RECEIVED))
+    return 0;
+
+  server_extr_req_params(client, method, resource, protocol);
+  server_verify_cli_protocol(protocol, client);
+  server_verify_cli_method(method, client);
+  server_verify_cli_resource(resource, r_server, client);
+
+  client->status = client->status & (~REQUEST_RECEIVED);
+
+  if (client->method == PUT)
   {
-    server_extr_req_params(client, method, resource, protocol);
-    server_verify_cli_protocol(protocol, client);
-    server_verify_cli_method(method, client);
-    server_verify_cli_resource(resource, serv_root, client);
+    if (client->resp_status == OK)
+    {
+      file_node *file_to_add;
+      file_to_add = file_node_allocate(client->file);
+      if (!file_to_add)
+        return -1;
+      file_node_append(file_to_add, r_server->n_ready_files);
 
-    client->status = client->status & (~REQUEST_RECEIVED);
-
-    if (client->method == GET)
-      client->status = client->status | WRITE_HEADER | WRITE_DATA;
-
-    if (client->method == PUT)
       client->status = client->status | READ_DATA;
+    }
+    else
+      client->status = client->status | WRITE_HEADER | WRITE_DATA;
   }
+  else
+    client->status = client->status | WRITE_HEADER | WRITE_DATA;
+
+  return 0;
 }
 
 /*! \brief Funcao que le o arquivo solicitado pelo cliente
@@ -865,7 +911,6 @@ int server_send_response(client_node *client)
 
   bucket_withdraw(b_sent, &client->bucket);
   client->pos_buf = 0;
-  server_update_cli_status(client);
   return 0;
 }
 
@@ -986,27 +1031,36 @@ void file_node_append(file_node *file, file_list *l_files)
  * \param[in] file O arquivo a ser retirado da lista
  * \param[out] l_files A lista de arquivos
  *
- * \return -1 Caso erro
- * \return 0 Caso OK
+ * \return NULL Caso erro
+ * \return file_node O endereco da estrutura contendo o arquivo
  */
-int file_node_pop(file_node *file, file_list *l_files)
+file_node *file_node_pop(FILE *file, file_list *l_files)
 {
-  if (!file || !l_files->size)
-    return -1;
+  file_node *file_struct;
 
-  if (file == l_files->head)
-    l_files->head = file->next;
+  if (!file || !l_files->size)
+    return NULL;
+
+  for (file_struct = l_files->head; file_struct && file_struct->file != file;
+       file_struct = file_struct->next)
+    ;
+
+  if (!file_struct)
+    return file_struct;
+
+  if (file_struct == l_files->head)
+    l_files->head = file_struct->next;
   else
   {
-    if (file->next)
-      file->next->prev = file->prev;
+    if (file_struct->next)
+      file_struct->next->prev = file_struct->prev;
 
-    if (file->prev)
-      file->prev->next = file->next;
+    if (file_struct->prev)
+      file_struct->prev->next = file_struct->next;
   }
 
   l_files->size--;
-  return 0;
+  return file_struct;
 }
 
 /*! \brief Libera um elemento da struct de arquivos
