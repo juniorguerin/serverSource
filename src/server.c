@@ -1183,6 +1183,7 @@ void clean_up_server(server *r_server)
 {
   client_node *client;
   file_node *file;
+  file_node *next_file;
 
   unlink(LSOCK_NAME);
   if (r_server->listenfd)
@@ -1195,9 +1196,12 @@ void clean_up_server(server *r_server)
   while (client)
     server_client_remove(&client, &r_server->l_clients);
 
-  for (file = r_server->used_files.head; file; file = file->next)
+  file = r_server->used_files.head;
+  while (file)
   {
+    next_file = file->next;
     file_node_pop(file, &r_server->used_files);
     file_node_free(file);
+    file = next_file;
   }
 }
