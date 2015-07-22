@@ -54,7 +54,54 @@ static void server_verify_cli_method(const char *method_str,
     cur_client->method = cont - 1;
 }
 
-/*! \brief Funcao que verifica o recurso que o cliente esta querendo acessar
+/* \brief Faz analises sobre o arquivo solicitado: se o arquivo ja existe e se
+ * ja esta em uso ou nao
+ *
+ * \param[in] resource O recurso solicitado
+ * \param[in] full_path Caminho completo para o recurso solicitado
+ * \param[out] client O cliente
+ * \param[out] r_server O servidor
+ *
+ * \return -1 Caso erro
+ * \return 0 Caso ok
+ */
+static int process_file_req(const char *resource, const char *full_path,
+                            client_node *client, server *r_server)
+{
+  file_node *file_to_add;
+
+  if (0 > verify_file_status(resource, client->method, &r_server->used_files,
+                          client->used_file))
+  {
+    client->resp_status = FORBIDDEN;
+    return -1;
+  }
+
+  if (client->method == GET)
+    client->file = fopen(full_path, "r");
+  else
+    client->file = fopen(full_path, "w");
+
+  if (!client->file)
+  {
+    client->resp_status = NOT_FOUND;
+    return -1;
+  }
+
+  if (!client->used_file)
+  {
+    file_to_add = file_node_allocate(resource, client->method);
+    if (!file_to_add)
+      return -1;
+    file_node_append(file_to_add, &r_server->used_files);
+    client->used_file = file_to_add;
+  }
+
+  return 0;
+}
+
+/*! \brief Funcao que verifica o recurso que o cliente esta querendo acessar e
+ * faz procedimentos necessarios para atualizar uso de arquivos
  *
  * \param[in] resource String extraida da requisicao do cliente
  * correspondente ao recurso
@@ -66,47 +113,32 @@ static void server_verify_cli_method(const char *method_str,
  */
 static int server_verify_cli_resource(const char *resource,
                                       server *r_server,
-                                      client_node *cur_client)
+                                      client_node *client)
 {
   char full_path[PATH_MAX];
   char rel_path[PATH_MAX];
-  char *serv_root = r_server->serv_root;
 
   /* Caso status de erro para a mensagem, nao analisa resource */
-  if (cur_client->resp_status)
+  if (client->resp_status)
     return -1;
-
-  if (verify_file_status(resource, &r_server->n_ready_files))
-  {
-    cur_client->resp_status = FORBIDDEN;
-    return -1;
-  }
 
   memset(full_path, 0, sizeof(full_path));
   memset(rel_path, 0, sizeof(rel_path));
 
-  strncpy(rel_path, serv_root, ROOT_LEN - 1);
+  strncpy(rel_path, r_server->serv_root, ROOT_LEN - 1);
   strncat(rel_path, "/", 1);
   strncat(rel_path, resource, PATH_MAX - ROOT_LEN - 1);
   realpath(rel_path, full_path);
-  if (strncmp(serv_root, full_path, strlen(serv_root)))
+  if (strncmp(r_server->serv_root, full_path, strlen(r_server->serv_root)))
   {
-    cur_client->resp_status = FORBIDDEN;
+    client->resp_status = FORBIDDEN;
     return -1;
   }
 
-  if (cur_client->method == GET)
-    cur_client->file = fopen(full_path, "r");
-  else
-    cur_client->file = fopen(full_path, "w");
-
-  if (!cur_client->file)
-  {
-    cur_client->resp_status = NOT_FOUND;
+  if (0 > process_file_req(resource, full_path, client, r_server))
     return -1;
-  }
 
-  cur_client->resp_status = OK;
+  client->resp_status = OK;
   return 0;
 }
 
@@ -363,18 +395,10 @@ int server_process_cli_status(client_node *client, server *r_server)
 {
   client->status = client->status & (~PENDING_DATA);
 
-  if (client->status & READ_DATA)
+  if (!(client->status & PENDING_DATA) && (client->status & READ_DATA))
   {
-    file_node *n_ready_file;
-
     client->status = 0;
     client->status = client->status | FINISHED;
-
-    n_ready_file = file_node_pop(client->file, &r_server->n_ready_files);
-    if (!n_ready_file)
-      return -1;
-
-    file_node_free(n_ready_file);
   }
 
   if (client->status & WRITE_HEADER)
@@ -392,6 +416,21 @@ int server_process_cli_status(client_node *client, server *r_server)
   {
     client->status = 0;
     client->status = client->status | FINISHED;
+  }
+
+  if (client->status & FINISHED && client->used_file)
+  {
+    if (client->used_file->cont > 1)
+      client->used_file->cont--;
+    else
+    {
+      file_node *used_file;
+      used_file = file_node_pop(client->used_file, &r_server->used_files);
+      if (!used_file)
+        return -1;
+
+      file_node_free(used_file);
+    }
   }
 
   return 0;
@@ -696,18 +735,10 @@ int server_verify_request(server *r_server, client_node *client)
 
   client->status = client->status & (~REQUEST_RECEIVED);
 
-  if (client->method == PUT)
+  if (client->resp_status == OK)
   {
-    if (client->resp_status == OK)
-    {
-      file_node *file_to_add;
-      file_to_add = file_node_allocate(resource, client->file);
-      if (!file_to_add)
-        return -1;
-      file_node_append(file_to_add, &r_server->n_ready_files);
-
+    if (client->method == PUT)
       client->status = client->status | READ_DATA;
-    }
     else
       client->status = client->status | WRITE_HEADER | WRITE_DATA;
   }
@@ -789,8 +820,10 @@ int server_process_write_file(client_node *client, server *r_server)
 
   not_accept_flags = PENDING_DATA | FINISHED | SIGNAL_WAIT;
 
-  if (client->status & not_accept_flags || !client->pos_buf ||
-      GET == client->method)
+  if (client->status & not_accept_flags || GET == client->method)
+    return 0;
+
+  if (client->status & WRITE_DATA && !(client->status & READ_DATA))
     return 0;
 
   if(0 != threadpool_add(server_write_file, client,
@@ -846,10 +879,10 @@ int server_recv_response(client_node *client)
   int b_to_receive;
   int not_accept_flags;
 
-  not_accept_flags = FINISHED | SIGNAL_WAIT | WRITE_DATA;
+  not_accept_flags = FINISHED | SIGNAL_WAIT;
 
   if (client->status & not_accept_flags || !client->bucket.transmission ||
-      client->pos_buf)
+      client->pos_header || client->method == GET)
     return 0;
 
   b_to_receive = BUFFER_LEN;
@@ -978,15 +1011,20 @@ void server_process_thread_signals(server *r_server)
  *
  * \param[out] r_server A estrutura do servidor
  * \param[out] timeout O timeout a ser aplicado ao select
+ *
+ * \return -1 Caso erro na extracao do tempo atual
+ * \return 0 Caso ok
  */
-void server_select_analysis(server *r_server, struct timeval **timeout,
-                            struct timeval *burst_rem_time)
+int server_select_analysis(server *r_server, struct timespec **timeout,
+                            struct timespec *burst_rem_time)
 {
   int transmission_flag = 0;
-  struct timeval burst_cur_time;
+  struct timespec burst_cur_time;
 
-  bucket_burst_init(&r_server->last_burst, &burst_cur_time);
-  if (!timerisset(&burst_cur_time))
+  if (0 > bucket_burst_init(&r_server->last_burst, &burst_cur_time))
+    return -1;
+
+  if (!timespecisset(&burst_cur_time))
   {
     client_node *cur_client;
     for(cur_client = r_server->l_clients.head; cur_client; 
@@ -999,7 +1037,9 @@ void server_select_analysis(server *r_server, struct timeval **timeout,
   {
     bucket_burst_remain_time(&burst_cur_time, burst_rem_time); 
     *timeout = burst_rem_time;
-  } 
+  }
+
+  return 0;
 }
 
 /* \brief Adiciona um arquivo no final da lista de arquivos
@@ -1035,33 +1075,33 @@ void file_node_append(file_node *file, file_list *l_files)
  * \return NULL Caso erro
  * \return file_node O endereco da estrutura contendo o arquivo
  */
-file_node *file_node_pop(FILE *file, file_list *l_files)
+file_node *file_node_pop(file_node *f_node, file_list *l_files)
 {
-  file_node *file_struct;
+  file_node *f_struct;
 
-  if (!file || !l_files->size)
+  if (!f_node || !l_files->size)
     return NULL;
 
-  for (file_struct = l_files->head; file_struct && file_struct->file != file;
-       file_struct = file_struct->next)
+  for (f_struct = l_files->head; f_struct && f_struct != f_node;
+       f_struct = f_struct->next)
     ;
 
-  if (!file_struct)
-    return file_struct;
+  if (!f_struct)
+    return f_struct;
 
-  if (file_struct == l_files->head)
-    l_files->head = file_struct->next;
+  if (f_struct == l_files->head)
+    l_files->head = f_struct->next;
   else
   {
-    if (file_struct->next)
-      file_struct->next->prev = file_struct->prev;
+    if (f_struct->next)
+      f_struct->next->prev = f_struct->prev;
 
-    if (file_struct->prev)
-      file_struct->prev->next = file_struct->next;
+    if (f_struct->prev)
+      f_struct->prev->next = f_struct->next;
   }
 
   l_files->size--;
-  return file_struct;
+  return f_struct;
 }
 
 /*! \brief Libera um elemento da struct de arquivos
@@ -1076,11 +1116,13 @@ void file_node_free(file_node *file)
 /*! \brief Aloca um novo elemento da estrutura de arquivos
  *
  * \param[in] file_name A referencia do arquivo
+ * \param[in] file Descritor do arquivo
+ * \param[in] method O tipo de metodo relacionado ao arquivo usado
  *
  * \return NULL caso haja erro de alocacao
  * \return file_node caso a estrutura seja alocada
  */
-file_node *file_node_allocate(const char *file_name, FILE *file)
+file_node *file_node_allocate(const char *file_name, http_methods method)
 {
   file_node *new_file = NULL;
 
@@ -1090,26 +1132,72 @@ file_node *file_node_allocate(const char *file_name, FILE *file)
 
   memset(new_file->file_name, 0, sizeof(*new_file->file_name));
   strcpy(new_file->file_name, file_name);
-  new_file->file = file;
+  new_file->op_kind = method;
+  new_file->cont++;
 
   return new_file;
 }
 
-/* \brief Verifica se um arquivo esta sendo alterado
+/* \brief Verifica se um arquivo esta sendo utilizado e retorna a quantidade de
+ * usos do arquivo, ou 0 caso nao seja permitido
  *
  * \param[in] file O arquivo a ser analisado
+ * \param[in] cli_method O metodo do cliente
  * \param[out] l_files A lista de arquivos sendo modificados
+ * \param[out] match_file O endereco do arquivo em questao
  *
- * \return 0 Caso nao esteja sendo modificado
- * \return 1 Caso esteja sendo modificado
+ * \return -1 Caso nao seja permitido o uso
+ * \return 0 Caso seja permitido o uso e seja o primeiro uso
+ * \return 1 Caso seja permitido o uso e o arquivo ja exista
  */
-int verify_file_status(const char *file_name, file_list *l_files)
+int verify_file_status(const char *file_name, http_methods cli_method,
+                       file_list *l_files, file_node *match_file)
 {
   file_node *cur_file;
 
   for (cur_file = l_files->head; cur_file; cur_file = cur_file->next)
     if (!strncmp(cur_file->file_name, file_name, strlen(file_name)))
-      return 1;
+    {
+      if (cur_file->op_kind == GET)
+      {
+        if (cli_method == GET)
+        {
+          match_file = cur_file;
+          return 1;
+        }
+
+        return -1;
+      }
+
+      return -1;
+    }
 
   return 0;
+}
+
+/* \brief Realiza a desalocacao de todos os componentes do servidor
+ *
+ * \param[out] r_server O servidor
+ */
+void clean_up_server(server *r_server)
+{
+  client_node *client;
+  file_node *file;
+
+  unlink(LSOCK_NAME);
+  if (r_server->listenfd)
+    close(r_server->listenfd);
+  if (r_server->l_socket)
+    close(r_server->l_socket);
+  threadpool_destroy(&r_server->thread_pool);
+
+  client = r_server->l_clients.head;
+  while (client)
+    server_client_remove(&client, &r_server->l_clients);
+
+  for (file = r_server->used_files.head; file; file = file->next)
+  {
+    file_node_pop(file, &r_server->used_files);
+    file_node_free(file);
+  }
 }

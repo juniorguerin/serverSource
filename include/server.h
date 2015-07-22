@@ -16,6 +16,7 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <string.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -49,7 +50,7 @@
 #define STR_PROTOCOL_LEN STR(PROTOCOL_LEN)
 #define STR_METHOD_LEN STR(METHOD_LEN)
 #define STR_RESOURCE_LEN STR(RESOURCE_LEN)
-#define LSOCK_NAME "/home/junior/Documentos/server_treinamento"
+#define LSOCK_NAME "/home/junior/Documentos/lsocket_treinamento"
 #define LSOCK_NAME_LEN 64
 
 #define READ_REQUEST 0x01
@@ -86,6 +87,32 @@ typedef enum http_code_
   NOT_IMPLEMENTED = 501
 } http_code;
 
+/*! \brief Arquivo sendo alterado / recebido */
+typedef struct file_node_
+{
+  char file_name[RESOURCE_LEN]; /*!< Nome do arquivo */
+  http_methods op_kind; /*!< Tipo de alteracao sendo realizada */
+  int cont; /*!< Quantidade de mesmo tipo do arquivo */
+  struct file_node_ *next;
+  struct file_node_ *prev;
+} file_node;
+
+/* \brief Lista de arquivos sendo alterado / recebido */
+typedef struct file_list_
+{
+  file_node *head; /* Primeiro arquivo */
+  int size; /* Tamanho da lista*/
+} file_list;
+
+void file_node_append(file_node *file, file_list *l_of_files);
+file_node *file_node_pop(file_node *f_node, file_list *l_files);
+
+void file_node_free(file_node *file);
+file_node *file_node_allocate(const char *file_name, http_methods method);
+
+int verify_file_status(const char *file_name, http_methods cli_method,
+                       file_list *l_files, file_node *match_file);
+
 /*! \brief Um no' para a lista de clientes  */
 typedef struct client_node_ 
 {
@@ -101,6 +128,7 @@ typedef struct client_node_
   http_code resp_status; /*!< Codigo para a resposta ao cliente */
   FILE *file; /*!< Arquivo para o recurso solicitado */
   token_bucket bucket; /*!< Bucket para controle de velocidade */
+  file_node *used_file; /*!< Endereco do arquivo sendo usado */
   struct client_node_ *next; /*!< Proximo no' */
   struct client_node_ *prev; /*!< No' anterior */
 } client_node;
@@ -119,30 +147,6 @@ int client_node_pop(client_node *client,
 
 client_node *client_node_allocate(int sockfd);
 void client_node_free(client_node *client);
-
-/*! \brief Arquivo sendo alterado / recebido */
-typedef struct file_node_
-{
-  char file_name[RESOURCE_LEN]; /*!< Arquivo */
-  FILE *file; /*!< Descritor do arquivo */
-  struct file_node_ *next;
-  struct file_node_ *prev;
-} file_node;
-
-/* \brief Lista de arquivos sendo alterado / recebido */
-typedef struct file_list_
-{
-  file_node *head; /* Primeiro arquivo */
-  int size; /* Tamanho da lista*/
-} file_list;
-
-void file_node_append(file_node *file, file_list *l_of_files);
-file_node *file_node_pop(FILE *file, file_list *l_files);
-
-void file_node_free(file_node *file);
-file_node *file_node_allocate(const char *file_name, FILE *file);
-
-int verify_file_status(const char *file_name, file_list *l_files);
 
 /*! \brief Guarda as variaveis do tipo fd_set vinculadas ao servidor
  */
@@ -164,17 +168,16 @@ typedef struct server_
   int maxfd_number; /*!< O maior descritor a observar */
   char serv_root[ROOT_LEN]; /*!< O endereco do root do servidor */
   unsigned int velocity; /*!< Velocidade de conexao */
-  struct timeval last_burst; /*!< Ultimo inicio de burst */
+  struct timespec last_burst; /*!< Ultimo inicio de burst */
   threadpool thread_pool; /*!< Pool de threads */
-  file_list n_ready_files; /*! Arquivos que estao sendo escritos */
+  file_list used_files; /*! Arquivos que estao sendo escritos */
   client_node* cli_signaled[FD_SETSIZE]; /*!< Vetor de sinalizacao */
 } server;
 
 int server_init(int argc, const char **argv, server *r_server);
 
-void server_select_analysis(server *r_server, 
-                            struct timeval **timeout,
-                            struct timeval *burst_rem_time);
+int server_select_analysis(server *r_server, struct timespec **timeout,
+                           struct timespec *burst_rem_time);
 
 int server_make_connection(server *r_server);
 
@@ -202,5 +205,7 @@ int server_process_read_file(client_node *client, server *r_server);
 int server_process_write_file(client_node *client, server *r_server);
 
 int server_process_cli_status(client_node *client, server *r_server);
+
+void clean_up_server(server *r_server);
 
 #endif

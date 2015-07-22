@@ -27,9 +27,16 @@ int bucket_withdraw(const int remove_tokens, token_bucket *bucket);
 
 void bucket_fill(token_bucket *bucket);
 
-void bucket_burst_remain_time(const struct timeval *burst_cur_time, 
-                              struct timeval *burst_rem_time);
+void bucket_burst_remain_time(const struct timespec *burst_cur_time,
+                              struct timespec *burst_rem_time);
 
-void bucket_burst_init(struct timeval *burst_ini_time, 
-                       struct timeval *burst_cur_time);
+int bucket_burst_init(struct timespec *burst_ini_time,
+                      struct timespec *burst_cur_time);
+
+void timespecsub(const struct timespec *cur_time,
+                 const struct timespec *last_time,
+                 struct timespec *result);
+
+int timespecisset(struct timespec *time);
+
 #endif

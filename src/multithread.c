@@ -141,6 +141,9 @@ int threadpool_destroy(threadpool *pool)
   if (!pool)
     return -1;
 
+  if (0 < pool->l_socket)
+    close(pool->l_socket);
+
   if (pthread_mutex_lock(&(pool->lock)))
     return -1;
 

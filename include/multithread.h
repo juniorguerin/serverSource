@@ -13,7 +13,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-#define THREAD_NUM 1
+#define THREAD_NUM 4
 #define SIGNAL_LEN 65
 
 typedef enum task_status_
