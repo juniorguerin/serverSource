@@ -102,14 +102,14 @@ int main(int argc, const char **argv)
         if (0 != server_read_client_request(cur_client) ||
             0 != server_verify_request(&r_server, cur_client))
         {
-          server_client_remove(&cur_client, &r_server.l_clients);
+          server_client_remove(&cur_client, &r_server);
           continue;
         }
 
         if (0 != server_recv_response(cur_client) ||
             0 != server_process_write_file(cur_client, &r_server))
         {
-          server_client_remove(&cur_client, &r_server.l_clients);
+          server_client_remove(&cur_client, &r_server);
           continue;
         }
 
@@ -121,16 +121,15 @@ int main(int argc, const char **argv)
       {
         if (0 != server_build_header(cur_client) ||
             0 != server_send_response(cur_client) ||
-            0 != server_process_cli_status(cur_client, &r_server) ||
             0 != server_process_read_file(cur_client, &r_server))
         {
-          server_client_remove(&cur_client, &r_server.l_clients);
+          server_client_remove(&cur_client, &r_server);
           continue;
         }
 
         if (cur_client->status & FINISHED)
         {
-          server_client_remove(&cur_client, &r_server.l_clients);
+          server_client_remove(&cur_client, &r_server);
           continue;
         }
 
@@ -140,7 +139,7 @@ int main(int argc, const char **argv)
 
       if (FD_ISSET(sockfd, &r_server.sets.except_s))
       {
-          server_client_remove(&cur_client, &r_server.l_clients);
+          server_client_remove(&cur_client, &r_server);
           continue;
       }
 

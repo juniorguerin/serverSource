@@ -394,7 +394,7 @@ error:
  */
 static int server_upd_ufile_info(client_node *client, server *r_server)
 {
-  if (client->status & FINISHED && client->used_file)
+  if (client->used_file)
   {
     if (client->used_file->cont > 1)
       client->used_file->cont--;
@@ -416,12 +416,8 @@ static int server_upd_ufile_info(client_node *client, server *r_server)
  * arquivo de lista de arquivos em transferencia, caso esteja em PUT
  *
  * \param[out] client O cliente atualizado
- * \param[out] r_server O servidor
- *
- * \return 0 Caso ok
- * \return -1 Caso a referencia do arquivo a ser fechado esteja errada
  */
-int server_process_cli_status(client_node *client, server *r_server)
+void server_process_cli_status(client_node *client)
 {
   if (!(client->status & PENDING_DATA) && (client->status & READ_DATA))
   {
@@ -445,11 +441,6 @@ int server_process_cli_status(client_node *client, server *r_server)
     client->status = 0;
     client->status = client->status | FINISHED;
   }
-
-  if (0 > server_upd_ufile_info(client, r_server))
-    return -1;
-
-  return 0;
 }
 
 /*! \brief Gera o header da resposta ao cliente se for necessario
@@ -627,15 +618,9 @@ int server_client_remove(client_node **cur_client, server *r_server)
   client_remove = *cur_client;
   *cur_client = (*cur_client)->next;
 
-  if (client_remove->used_file->cont > 1)
-    client_remove->used_file->cont--;
-  else
-  {
-    file_node_pop(&client_remove->used_file, &r_server->used_files)
-    file_node_free(&client_remove->used_file);
-  }
+  server_upd_ufile_info(client_remove, r_server);
 
-  if(0 > client_node_pop(client_remove, r_server->l_clients))
+  if(0 > client_node_pop(client_remove, &r_server->l_clients))
     return -1;
   
   client_node_free(client_remove);
@@ -969,6 +954,7 @@ int server_send_response(client_node *client)
   bucket_withdraw(b_sent, &client->bucket);
   client->pos_buf = 0;
   client->status = client->status & (~PENDING_DATA);
+  server_process_cli_status(client);
   return 0;
 }
 
@@ -1216,7 +1202,7 @@ void clean_up_server(server *r_server)
 
   client = r_server->l_clients.head;
   while (client)
-    server_client_remove(&client, &r_server->l_clients);
+    server_client_remove(&client, r_server);
 
   file = r_server->used_files.head;
   while (file)

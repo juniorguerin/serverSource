@@ -181,8 +181,7 @@ int server_select_analysis(server *r_server, struct timespec **timeout,
 
 int server_make_connection(server *r_server);
 
-int server_client_remove(client_node **client,
-                         client_list *list_of_clients);
+int server_client_remove(client_node **cur_client, server *r_server);
 
 int server_recv_client_request(int bytes_to_receive,
                                client_node *cur_client);
@@ -204,7 +203,7 @@ void server_process_thread_signals(server *r_server);
 int server_process_read_file(client_node *client, server *r_server);
 int server_process_write_file(client_node *client, server *r_server);
 
-int server_process_cli_status(client_node *client, server *r_server);
+void server_process_cli_status(client_node *client);
 
 void clean_up_server(server *r_server);
 
