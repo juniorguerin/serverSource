@@ -71,7 +71,7 @@ static int process_file_req(const char *resource, const char *full_path,
   file_node *file_to_add;
 
   if (0 > verify_file_status(resource, client->method, &r_server->used_files,
-                          client->used_file))
+                             client->used_file))
   {
     client->resp_status = FORBIDDEN;
     return -1;
@@ -382,6 +382,34 @@ error:
   return -1;
 }
 
+/* \brief Funcao que analisa o status do arquivo em uso pelo cliente
+ *
+ * \param[out] client O cliente em questao
+ * \param[out] r_server O servidor
+ *
+ * \return -1 Caso erro
+ * \return 0 Caso OK
+ */
+static int server_upd_ufile_info(client_node *client, server *r_server)
+{
+  if (client->status & FINISHED && client->used_file)
+  {
+    if (client->used_file->cont > 1)
+      client->used_file->cont--;
+    else
+    {
+      file_node *used_file;
+      used_file = file_node_pop(client->used_file, &r_server->used_files);
+      if (!used_file)
+        return -1;
+
+      file_node_free(used_file);
+    }
+  }
+
+  return 0;
+}
+
 /* \brief Funcao que atualiza o status do cliente apos enviar dados e elimina
  * arquivo de lista de arquivos em transferencia, caso esteja em PUT
  *
@@ -393,8 +421,6 @@ error:
  */
 int server_process_cli_status(client_node *client, server *r_server)
 {
-  client->status = client->status & (~PENDING_DATA);
-
   if (!(client->status & PENDING_DATA) && (client->status & READ_DATA))
   {
     client->status = 0;
@@ -418,20 +444,8 @@ int server_process_cli_status(client_node *client, server *r_server)
     client->status = client->status | FINISHED;
   }
 
-  if (client->status & FINISHED && client->used_file)
-  {
-    if (client->used_file->cont > 1)
-      client->used_file->cont--;
-    else
-    {
-      file_node *used_file;
-      used_file = file_node_pop(client->used_file, &r_server->used_files);
-      if (!used_file)
-        return -1;
-
-      file_node_free(used_file);
-    }
-  }
+  if (0 > server_upd_ufile_info(client, r_server))
+    return -1;
 
   return 0;
 }
@@ -802,7 +816,7 @@ void server_write_file(void *c_client)
     *pos_buf = 0;
     *task_st = MORE_DATA;
     *pos_header = 0;
-    }
+  }
 }
 
 /* \brief Realiza verificacoes para a escrita do arquivo e coloca a tarefa no
@@ -823,7 +837,7 @@ int server_process_write_file(client_node *client, server *r_server)
   if (client->status & not_accept_flags || GET == client->method)
     return 0;
 
-  if (client->status & WRITE_DATA && !(client->status & READ_DATA))
+  if (client->status & WRITE_HEADER && !(client->status & READ_DATA))
     return 0;
 
   if(0 != threadpool_add(server_write_file, client,
@@ -882,7 +896,7 @@ int server_recv_response(client_node *client)
   not_accept_flags = FINISHED | SIGNAL_WAIT;
 
   if (client->status & not_accept_flags || !client->bucket.transmission ||
-      client->pos_header || client->method == GET)
+      client->pos_header || GET == client->method)
     return 0;
 
   b_to_receive = BUFFER_LEN;
@@ -945,6 +959,7 @@ int server_send_response(client_node *client)
 
   bucket_withdraw(b_sent, &client->bucket);
   client->pos_buf = 0;
+  client->status = client->status & (~PENDING_DATA);
   return 0;
 }
 
@@ -970,7 +985,6 @@ void server_recv_thread_signals(server *r_server)
     if (b_recv <= 0)
       break;
 
-    /* Armazena o socket e o status da tarefa */
     if(1 != (sscanf(signal_str, "%p", &r_server->cli_signaled[cont])))
     {
       memset(r_server->cli_signaled[cont], 0,
@@ -1138,8 +1152,7 @@ file_node *file_node_allocate(const char *file_name, http_methods method)
   return new_file;
 }
 
-/* \brief Verifica se um arquivo esta sendo utilizado e retorna a quantidade de
- * usos do arquivo, ou 0 caso nao seja permitido
+/* \brief Verifica se um arquivo esta sendo utilizado
  *
  * \param[in] file O arquivo a ser analisado
  * \param[in] cli_method O metodo do cliente

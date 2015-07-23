@@ -103,7 +103,7 @@ int bucket_burst_init(struct timespec *burst_ini_time,
  * \param[in] last_time O tempo anterior
  * \param[out] result O resultado
  *
- * \note Caso o tempo anterior seja maior que o atual, retorna a estrutura nula
+ * \note Caso o tempo anterior seja maior que o atual, retorna a estrutura com 0
  */
 void timespecsub(const struct timespec *cur_time,
                  const struct timespec *last_time,
