@@ -612,15 +612,14 @@ int server_make_connection(server *r_server)
 /*! \brief Remove um cliente da lista (fecha a conexao) 
  *
  * \param[out] cur_cli Endereco do cliente atual da lista
- * \param[out] l_clients Lista de clientes
+ * \param[out] r_server Lista de clientes
  *
  * \return -1 Caso haja erro
  * \return 0 Caso OK
  *
  * \note Avança ao proximo cliente com o primeiro parametro
  */
-int server_client_remove(client_node **cur_client, 
-                         client_list *l_clients) 
+int server_client_remove(client_node **cur_client, server *r_server)
 {
   client_node *client_remove = NULL;
 
@@ -630,8 +629,13 @@ int server_client_remove(client_node **cur_client,
 
   if (client_remove->used_file->cont > 1)
     client_remove->used_file->cont--;
+  else
+  {
+    file_node_pop(&client_remove->used_file, &r_server->used_files)
+    file_node_free(&client_remove->used_file);
+  }
 
-  if(0 > client_node_pop(client_remove, l_clients))
+  if(0 > client_node_pop(client_remove, r_server->l_clients))
     return -1;
   
   client_node_free(client_remove);
