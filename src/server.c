@@ -618,9 +618,8 @@ int server_client_remove(client_node **cur_client, server *r_server)
   client_remove = *cur_client;
   *cur_client = (*cur_client)->next;
 
-  server_upd_ufile_info(client_remove, r_server);
-
-  if(0 > client_node_pop(client_remove, &r_server->l_clients))
+  if (0 > server_upd_ufile_info(client_remove, r_server) ||
+      0 > client_node_pop(client_remove, &r_server->l_clients))
     return -1;
   
   client_node_free(client_remove);
