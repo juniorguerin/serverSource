@@ -96,6 +96,8 @@ static int process_file_req(const char *resource, const char *full_path,
     file_node_append(file_to_add, &r_server->used_files);
     client->used_file = file_to_add;
   }
+  else
+    client->used_file->cont++;
 
   return 0;
 }
@@ -621,10 +623,13 @@ int server_client_remove(client_node **cur_client,
                          client_list *l_clients) 
 {
   client_node *client_remove = NULL;
-  
+
   /* Passa ao proximo para nao perder a referencia */
   client_remove = *cur_client;
   *cur_client = (*cur_client)->next;
+
+  if (client_remove->used_file->cont > 1)
+    client_remove->used_file->cont--;
 
   if(0 > client_node_pop(client_remove, l_clients))
     return -1;
