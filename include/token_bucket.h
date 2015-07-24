@@ -16,16 +16,15 @@
 
 typedef struct token_bucket_
 {
-  int rate; /*!< Taxa de adicao de tokens (bytes) por segundo */
   int remain_tokens; /*!< Numero atual de tokens */
   int transmission; /*!< Flag para transmissao */
 } token_bucket;
 
-void bucket_init(const int velocity, token_bucket *bucket);
+void bucket_init(const int rate, token_bucket *bucket);
 
 int bucket_withdraw(const int remove_tokens, token_bucket *bucket);
 
-void bucket_fill(token_bucket *bucket);
+void bucket_fill(const int rate, token_bucket *bucket);
 
 void bucket_burst_remain_time(const struct timespec *burst_cur_time,
                               struct timespec *burst_rem_time);

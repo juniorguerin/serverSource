@@ -8,13 +8,12 @@
 
 /*! \brief Inicializa um bucket com limite de tokens
  *
- * \param[in] velocity Velocidade em kb/s
+ * \param[in] rate A taxa em B/s
  * \param[out] bucket Bucket em questao
  */
-void bucket_init(const int velocity, token_bucket *bucket)
+void bucket_init(const int rate, token_bucket *bucket)
 {
-  bucket->rate = velocity;
-  bucket->remain_tokens = bucket->rate;
+  bucket->remain_tokens = rate;
   bucket->transmission = 1;
 }
 
@@ -42,11 +41,12 @@ int bucket_withdraw(const int remove_tokens,
 
 /*! \brief Enche o bucket e coloca a flag de tramissao como 1
  *
- * \param[in] bucket O bucket em questao
+ * \param[in] rate A taxa em B/s
+ * \param[out] bucket O bucket em questao
  */
-void bucket_fill(token_bucket *bucket)
+void bucket_fill(const int rate, token_bucket *bucket)
 {
-  bucket->remain_tokens = bucket->rate;
+  bucket->remain_tokens = rate;
   bucket->transmission = 1;
 }
 

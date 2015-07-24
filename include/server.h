@@ -51,9 +51,10 @@
 #define STR_METHOD_LEN STR(METHOD_LEN)
 #define STR_RESOURCE_LEN STR(RESOURCE_LEN)
 #define LSOCK_NAME "/home/junior/Documentos/treinamento/treinamento.socket"
-#define LSOCK_NAME_LEN 64
-#define PID_PATH "/home/junior/Documentos/treinamento/serverConfig/"
+#define CONFIG_PATH "/home/junior/Documentos/treinamento/serverConfig/"
 #define PID_FILE "servidorWeb.pid"
+#define CONFIG_FILE "servidorWebConfig.txt"
+#define LOG_FILE "log.txt"
 #define PID_LEN 10
 
 #define READ_REQUEST 0x01
@@ -169,7 +170,7 @@ typedef struct server_
   int listenfd; /*!< O socket de escuta */
   int l_socket; /*!< Socket de escuta local */
   int maxfd_number; /*!< O maior descritor a observar */
-  char serv_root[ROOT_LEN]; /*!< O endereco do root do servidor */
+  char serv_root[PATH_MAX]; /*!< O endereco do root do servidor */
   unsigned int velocity; /*!< Velocidade de conexao */
   struct timespec last_burst; /*!< Ultimo inicio de burst */
   threadpool thread_pool; /*!< Pool de threads */

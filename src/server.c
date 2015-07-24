@@ -314,12 +314,12 @@ static int server_parse_arguments(int argc, const char *argv[],
 
 /*! \brief Cria o socket para escuta em porta passada como parametro
  *
- * \param[in] r_server Estrutura do servidor, para usar a porta de escuta
+ * \param[in] listen_port A porta de escuta
  *
  * \return -1 Caso ocorra algum erro
  * \return listen_socket Caso esteja ok
  */
-static int server_create_listenfd(const server *r_server)
+static int server_create_listenfd(int listen_port)
 {
   struct sockaddr_in servaddr;
   int listen_socket;
@@ -335,7 +335,7 @@ static int server_create_listenfd(const server *r_server)
   memset(&servaddr, 0, sizeof(servaddr));
   servaddr.sin_family = AF_INET;
   servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-  servaddr.sin_port = htons(r_server->listen_port);
+  servaddr.sin_port = htons(listen_port);
 
   if (0 > bind(listen_socket, (struct sockaddr *) &servaddr,
       sizeof(servaddr)))
@@ -643,7 +643,7 @@ int server_init(int argc, const char **argv, server *r_server)
   r_server->maxfd_number = -1;
 
   if (0 > server_parse_arguments(argc, argv, r_server) ||
-      0 > (r_server->listenfd = server_create_listenfd(r_server)) ||
+      0 > (r_server->listenfd = server_create_listenfd(r_server->listen_port)) ||
       0 > (r_server->l_socket = server_create_local_socket()) ||
       0 > threadpool_init(LSOCK_NAME, &r_server->thread_pool) ||
       0 > server_write_pid_file())
@@ -1038,7 +1038,7 @@ int server_select_analysis(server *r_server, struct timespec **timeout,
     client_node *cur_client;
     for(cur_client = r_server->l_clients.head; cur_client; 
         cur_client = cur_client->next)  
-      bucket_fill(&cur_client->bucket);
+      bucket_fill(r_server->velocity, &cur_client->bucket);
   }
 
   transmission_flag = server_init_sets(r_server);   
@@ -1224,12 +1224,12 @@ int server_write_pid_file()
 {
   FILE *pid_file;
   char pid_str[PID_LEN];
-  char pid_file_str[strlen(PID_PATH) + strlen(PID_FILE) + 1];
+  char pid_file_str[strlen(CONFIG_PATH) + strlen(PID_FILE) + 1];
 
   memset(pid_str, 0, sizeof(pid_str));
   memset(pid_file_str, 0, sizeof(pid_file_str));
 
-  sprintf(pid_file_str, "%s%s", PID_PATH, PID_FILE);
+  sprintf(pid_file_str, "%s%s", CONFIG_PATH, PID_FILE);
   if (0 > access(pid_file_str, F_OK))
     remove(pid_file_str);
 
@@ -1245,8 +1245,99 @@ int server_write_pid_file()
   return 0;
 }
 
-/* FAZER */
+/* \brief Funcao que le o arquivo de configuracao e determina os parametros na
+ * estrutura do servidor
+ *
+ * \param[in] config_file_path Caminho do arquivo de configuracao
+ * \param[out] r_server O servidor
+ *
+ * \return 0 Caso ok
+ * \return -1 Caso haja algum erro
+ */
+static int server_read_config_file(const char *config_file_path,
+                                   server *r_server)
+{
+  FILE *config_file;
+  char config_str[PATH_MAX];
+  char *new_root;
+  char *new_vel_str;
+  char *new_port_str;
+  int new_vel;
+  int new_port;
+  int new_listenfd;
+
+  memset(config_str, 0, sizeof(config_str));
+
+  if (!(config_file = fopen(config_file_path, "r")))
+    return -1;
+
+  if (0 >= fread(config_str, sizeof(char), PATH_MAX, config_file))
+    return -1;
+
+  new_port_str = strtok(NULL, " ");
+  new_root = strtok(config_str, " ");
+  new_vel_str = strtok(NULL, " ");
+
+  if (strlen(new_port_str) > 0)
+  {
+    new_port = strtol(new_port_str, NULL, NUMBER_BASE);
+
+    if (0 > (new_listenfd = server_create_listenfd(new_port)))
+      return -1;
+
+    close(r_server->listenfd);
+    r_server->listenfd = new_listenfd;
+    r_server->listen_port = new_port;
+  }
+
+  if (strlen(new_root) > ROOT_LEN)
+    return -1;
+  else if (strlen(new_root) > 0)
+    strcpy(r_server->serv_root, new_root);
+
+  if (strlen(new_vel_str) > 0)
+  {
+    new_vel = strtol(new_vel_str, NULL, NUMBER_BASE);
+    r_server->velocity = new_vel;
+  }
+
+  return 0;
+}
+
+/* \brief Escreve mensagem de erro em arquivo de log
+ *
+ * \param[in] log_file_path O caminho para o arquivo
+ */
+void static server_write_log_file(const char *log_file_path)
+{
+  FILE *log_file;
+  char error_msg[] = "error\n";
+
+  log_file = fopen(log_file_path, "a");
+  if (log_file)
+  {
+    fwrite(error_msg, sizeof(char), sizeof(error_msg), log_file);
+    fclose(log_file);
+  }
+}
+
+/* \brief Funcao que altera as configuracoes do servidor. Se houver algum erro,
+ * escreve em um arquivo de log na mesma pasta do PID
+ *
+ * \param[out] r_server O servidor
+ */
 void alter_config(server *r_server)
 {
-  (void) r_server;
+  char log_file_path[strlen(CONFIG_PATH) + strlen(LOG_FILE) + 1];
+  char config_file_path[strlen(CONFIG_PATH) + strlen(CONFIG_FILE) + 1];
+
+  memset(log_file_path, 0, sizeof(log_file_path));
+  memset(config_file_path, 0, sizeof(config_file_path));
+
+  sprintf(config_file_path, "%s%s", CONFIG_PATH, CONFIG_FILE);
+  if (0 > server_read_config_file(config_file_path, r_server))
+  {
+    sprintf(log_file_path, "%s%s", CONFIG_PATH, LOG_FILE);
+    server_write_log_file(log_file_path);
+  }
 }
