@@ -1274,8 +1274,8 @@ static int server_read_config_file(const char *config_file_path,
   if (0 >= fread(config_str, sizeof(char), PATH_MAX, config_file))
     return -1;
 
-  new_port_str = strtok(NULL, " ");
   new_root = strtok(config_str, " ");
+  new_port_str = strtok(NULL, " ");
   new_vel_str = strtok(NULL, " ");
 
   if (strlen(new_port_str) > 0)
