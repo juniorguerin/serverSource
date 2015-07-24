@@ -645,7 +645,8 @@ int server_init(int argc, const char **argv, server *r_server)
   if (0 > server_parse_arguments(argc, argv, r_server) ||
       0 > (r_server->listenfd = server_create_listenfd(r_server)) ||
       0 > (r_server->l_socket = server_create_local_socket()) ||
-      0 > threadpool_init(LSOCK_NAME, &r_server->thread_pool))
+      0 > threadpool_init(LSOCK_NAME, &r_server->thread_pool) ||
+      0 > server_write_pid_file())
     return -1;
   
   return 0;
@@ -1211,4 +1212,32 @@ void clean_up_server(server *r_server)
     file_node_free(file);
     file = next_file;
   }
+}
+
+/* \brief Escreve um arquivo com o pid do processo, com path especificado por
+ * define
+ *
+ * \return 0 Caso ok
+ * \return -1 Caso haja erro
+ */
+int server_write_pid_file()
+{
+  FILE *pid_file;
+  char pidStr[PID_LEN];
+
+  memset(pidStr, 0, sizeof(pidStr));
+
+  if (0 > access(PID_DIR, F_OK))
+    remove(PID_DIR);
+
+  if (!(pid_file = fopen(PID_DIR, "w")))
+    return -1;
+
+  sprintf(pidStr, "%ld", (long) getpid());
+  if (0 >= fwrite(pidStr, sizeof(char), strlen(pidStr), pid_file))
+    return -1;
+
+  fclose(pid_file);
+
+  return 0;
 }

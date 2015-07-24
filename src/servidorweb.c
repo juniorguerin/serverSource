@@ -46,7 +46,7 @@ int main(int argc, const char **argv)
   if (0 > prepare_signal_handler(&act, &mask, &orig_mask) ||
       0 > server_init(argc, argv, &r_server))
   {
-    fprintf(stderr, "init_error");
+    fprintf(stderr, "init_error\n");
     goto finish_server;
   }
 
