@@ -1223,21 +1223,30 @@ void clean_up_server(server *r_server)
 int server_write_pid_file()
 {
   FILE *pid_file;
-  char pidStr[PID_LEN];
+  char pid_str[PID_LEN];
+  char pid_file_str[strlen(PID_PATH) + strlen(PID_FILE) + 1];
 
-  memset(pidStr, 0, sizeof(pidStr));
+  memset(pid_str, 0, sizeof(pid_str));
+  memset(pid_file_str, 0, sizeof(pid_file_str));
 
-  if (0 > access(PID_DIR, F_OK))
-    remove(PID_DIR);
+  sprintf(pid_file_str, "%s%s", PID_PATH, PID_FILE);
+  if (0 > access(pid_file_str, F_OK))
+    remove(pid_file_str);
 
-  if (!(pid_file = fopen(PID_DIR, "w")))
+  if (!(pid_file = fopen(pid_file_str, "w")))
     return -1;
 
-  sprintf(pidStr, "%ld", (long) getpid());
-  if (0 >= fwrite(pidStr, sizeof(char), strlen(pidStr), pid_file))
+  sprintf(pid_str, "%ld", (long) getpid());
+  if (0 >= fwrite(pid_str, sizeof(char), strlen(pid_str), pid_file))
     return -1;
 
   fclose(pid_file);
 
   return 0;
+}
+
+/* FAZER */
+void alter_config(server *r_server)
+{
+  (void) r_server;
 }

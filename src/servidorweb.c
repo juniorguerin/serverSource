@@ -7,11 +7,14 @@
 #include "server.h"
 
 static volatile int shut_down = 0;
+static volatile int alter_config_var = 0;
 
 static void sig_handler (int sig)
 {
-  (void) sig;
-  shut_down = 1;
+  if (SIGHUP == sig)
+    alter_config_var = 1;
+  else
+    shut_down = 1;
 }
 
 int prepare_signal_handler(struct sigaction *act, sigset_t *mask,
@@ -26,9 +29,13 @@ int prepare_signal_handler(struct sigaction *act, sigset_t *mask,
   if (sigaction(SIGINT, act, 0))
     return -1;
 
+  if (sigaction(SIGHUP, act, 0))
+    return -1;
+
   sigemptyset(mask);
   sigaddset(mask, SIGTERM);
   sigaddset(mask, SIGINT);
+  sigaddset(mask, SIGHUP);
 
   if (0 > sigprocmask(SIG_BLOCK, mask, orig_mask))
     return -1;
@@ -65,6 +72,12 @@ int main(int argc, const char **argv)
                      &r_server.sets.except_s, timeout, &orig_mask);
     if (shut_down)
       goto finish_server;
+
+    if (alter_config_var)
+    {
+      alter_config(&r_server);
+      alter_config_var = 0;
+    }
 
     if (0 > nready)
     {

@@ -52,7 +52,8 @@
 #define STR_RESOURCE_LEN STR(RESOURCE_LEN)
 #define LSOCK_NAME "/home/junior/Documentos/treinamento/treinamento.socket"
 #define LSOCK_NAME_LEN 64
-#define PID_DIR "/home/junior/Documentos/treinamento/serverConfig/servidorWeb.pid"
+#define PID_PATH "/home/junior/Documentos/treinamento/serverConfig/"
+#define PID_FILE "servidorWeb.pid"
 #define PID_LEN 10
 
 #define READ_REQUEST 0x01
@@ -210,5 +211,7 @@ void server_process_cli_status(client_node *client);
 void clean_up_server(server *r_server);
 
 int server_write_pid_file();
+
+void alter_config(server *r_server);
 
 #endif
