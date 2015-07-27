@@ -1282,12 +1282,15 @@ static int server_read_config_file(const char *config_file_path,
   {
     new_port = strtol(new_port_str, NULL, NUMBER_BASE);
 
-    if (0 > (new_listenfd = server_create_listenfd(new_port)))
-      return -1;
+    if (new_port != r_server->listen_port)
+    {
+      if (0 > (new_listenfd = server_create_listenfd(new_port)))
+        return -1;
 
-    close(r_server->listenfd);
-    r_server->listenfd = new_listenfd;
-    r_server->listen_port = new_port;
+      close(r_server->listenfd);
+      r_server->listenfd = new_listenfd;
+      r_server->listen_port = new_port;
+    }
   }
 
   if (strlen(new_root) > ROOT_LEN)
