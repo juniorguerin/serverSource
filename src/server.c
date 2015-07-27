@@ -1293,7 +1293,10 @@ static int server_read_config_file(const char *config_file_path,
   if (strlen(new_root) > ROOT_LEN)
     return -1;
   else if (strlen(new_root) > 1)
+  {
+    memset(r_server->serv_root, 0, sizeof(r_server->serv_root));
     strncpy(r_server->serv_root, new_root, strlen(new_root) - 1);
+  }
 
   if (strlen(new_vel_str) > 1)
   {
