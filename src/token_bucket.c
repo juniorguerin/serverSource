@@ -8,13 +8,12 @@
 
 /*! \brief Inicializa um bucket com limite de tokens
  *
- * \param[in] velocity Velocidade em b/s
+ * \param[in] rate A taxa em B/s
  * \param[out] bucket Bucket em questao
  */
-void bucket_init(const int velocity, token_bucket *bucket)
+void bucket_init(const int rate, token_bucket *bucket)
 {
-  bucket->rate = velocity;
-  bucket->remain_tokens = bucket->rate;
+  bucket->remain_tokens = rate;
   bucket->transmission = 1;
 }
 
@@ -42,66 +41,13 @@ int bucket_withdraw(const int remove_tokens,
 
 /*! \brief Enche o bucket e coloca a flag de tramissao como 1
  *
- * \param[in] bucket O bucket em questao
+ * \param[in] rate A taxa em B/s
+ * \param[out] bucket O bucket em questao
  */
-void bucket_fill(token_bucket *bucket)
+void bucket_fill(const int rate, token_bucket *bucket)
 {
-  bucket->remain_tokens = bucket->rate;
+  bucket->remain_tokens = rate;
   bucket->transmission = 1;
-}
-
-/*! \brief Verifica se o bucket tem determinada quantidade de tokens
- *
- * \param[in] bucket O bucket a ser verificado
- * \param[in] tokens A quantidade de tokens
- *
- * \return 0 Caso OK
- * \return -1 Caso nao tenha a quantidade de buckets
- *
- * \note Coloca a flag de transmissao como 0 caso nao tenha tokens
- */
-/*
-int bucket_verify_tokens(token_bucket *bucket, int tokens)
-{
-  if (bucket->remain_tokens < tokens)
-  {
-    bucket->transmission = 0;
-    return -1;
-  }
-
-  return 0;
-}
-*/
-
-/*! \brief Calcula a diferenca de tempo em microsegundos
- *
- * \param[in] cur_time Momento mais recente
- * \param[in] last_time Momento anterior
- *
- * \return timeval A diferenca de tempo
- */
-struct timeval timeval_subtract(const struct timeval *cur_time, 
-                                const struct timeval *last_time)
-{
-  struct timeval timeval_diff;
-  
-  memset(&timeval_diff, 0, sizeof(timeval_diff));
-
-  long usec = cur_time->tv_usec - last_time->tv_usec;
-  long sec = cur_time->tv_sec - last_time->tv_sec;
-
-  if (0 > sec)
-    return timeval_diff;
-  
-  if (0 > usec)
-  {
-    sec -= 1;
-    usec = 1000000 + usec;
-  }
-
-  timeval_diff.tv_usec = usec;
-  timeval_diff.tv_sec = sec;
-  return timeval_diff; 
 }
 
 /*! \brief Retorna tempo restante para o fim da burst atual
@@ -109,20 +55,92 @@ struct timeval timeval_subtract(const struct timeval *cur_time,
  * \param[in] burst_cur_time O tempo atual da burst
  * \param[out] burst_remain_time O tempo restante para a burst
  *
- * \return timeval O tempo restante
- *
- * \note Caso o tempo restante seja maior do que a burst, o tempo restante
- * tera valor igual ao tempo da burst
+ * \return timespec O tempo restante
  *
  */
-struct timeval burst_remain_time(const struct timeval *burst_cur_time)
+void bucket_burst_remain_time(const struct timespec *burst_cur_time,
+                              struct timespec *burst_rem_time)
 {
-  struct timeval burst_rem_time;
-  memset(&burst_rem_time, 0, sizeof(burst_rem_time));
+  struct timespec burst_total_time;
 
-  if (burst_cur_time->tv_sec < BURST_TIME)
-    burst_rem_time.tv_usec = labs(BURST_U_TIME - 
-                                   burst_cur_time->tv_usec);
+  memset(burst_rem_time, 0, sizeof(*burst_rem_time));
+  memset(&burst_total_time, 0, sizeof(burst_total_time));
+  burst_total_time.tv_sec = BURST_TIME;
 
-  return burst_rem_time;
+  timespecsub(&burst_total_time, burst_cur_time, burst_rem_time);
+}
+*/
+
+/*! \brief Recarrega todos os buckets a cada 1 segundo
+ *
+ * \param[in] burst_ini_time O momento da ultima recarga de tokens
+ * \param[out] burst_cur_time Tempo da burst atual
+ *
+ * \return -1 Caso haja erro no relogio
+ * \return 0 Caso ok
+ */
+int bucket_burst_init(struct timespec *burst_ini_time,
+                       struct timespec *burst_cur_time)
+{
+  struct timespec cur_time;
+
+  if (0 > clock_gettime(CLOCK_MONOTONIC, &cur_time))
+    return -1;
+
+  timespecsub(&cur_time, burst_ini_time, burst_cur_time);
+
+  if (burst_cur_time->tv_sec >= 1)
+  {
+    *burst_ini_time = cur_time;
+    memset(burst_cur_time, 0, sizeof(*burst_cur_time));
+  }
+
+  return 0;
+}
+
+/* \brief Realiza a subtracao de dois struct timespec
+ *
+ * \param[in] cur_time O tempo mais recente
+ * \param[in] last_time O tempo anterior
+ * \param[out] result O resultado
+ *
+ * \note Caso o tempo anterior seja maior que o atual, retorna a estrutura com 0
+ */
+void timespecsub(const struct timespec *cur_time,
+                 const struct timespec *last_time,
+                 struct timespec *result)
+{
+  time_t dif_sec = cur_time->tv_sec - last_time->tv_sec;
+  long dif_nsec = cur_time->tv_nsec - last_time->tv_nsec;
+  long long total_dif = 1000000000*dif_sec + dif_nsec;
+  memset(result, 0, sizeof(*result));
+
+  if (0 < total_dif)
+  {
+    if (0 > dif_nsec)
+    {
+      result->tv_nsec = 1000000000 + dif_nsec;
+      result->tv_sec = dif_sec - 1;
+    }
+    else
+    {
+      result->tv_nsec = dif_nsec;
+      result->tv_sec = dif_sec;
+    }
+  }
+}
+
+/* \brief Verifica se um timespec tem valores
+ *
+ * \param[in] time O tempo a ser verificado
+ *
+ * \return 1 Caso tenha valores
+ * \return 0 Caso contrario
+ */
+int timespecisset(struct timespec *time)
+{
+  if (!time->tv_sec && !time->tv_nsec)
+    return 0;
+
+  return 1;
 }

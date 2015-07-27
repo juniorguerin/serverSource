@@ -6,81 +6,123 @@
 
 #include "server.h"
 
+static volatile int shut_down = 0;
+static volatile int alter_config_var = 0;
+
+static void sig_handler (int sig)
+{
+  if (SIGHUP == sig)
+    alter_config_var = 1;
+  else
+    shut_down = 1;
+}
+
+int prepare_signal_handler(struct sigaction *act, sigset_t *mask,
+                           sigset_t *orig_mask)
+{
+  memset(act, 0, sizeof(*act));
+  act->sa_handler = sig_handler;
+
+  if (sigaction(SIGTERM, act, 0))
+    return -1;
+
+  if (sigaction(SIGINT, act, 0))
+    return -1;
+
+  if (sigaction(SIGHUP, act, 0))
+    return -1;
+
+  sigemptyset(mask);
+  sigaddset(mask, SIGTERM);
+  sigaddset(mask, SIGINT);
+  sigaddset(mask, SIGHUP);
+
+  if (0 > sigprocmask(SIG_BLOCK, mask, orig_mask))
+    return -1;
+
+  return 0;
+}
+
 int main(int argc, const char **argv)
 {
-  server r_server;  
+  server r_server;
+  sigset_t mask;
+  sigset_t orig_mask;
+  struct sigaction act;
 
-  init_server(&r_server);
-
-  if (0 > parse_arguments(argc, argv, &r_server))
+  if (0 > prepare_signal_handler(&act, &mask, &orig_mask) ||
+      0 > server_init(argc, argv, &r_server))
   {
-    fprintf(stderr, "usage: <root> <port> <velocity>\n");
-    goto error;
+    fprintf(stderr, "init_error\n");
+    goto finish_server;
   }
 
-  if (0 > (r_server.listenfd = create_listenfd(&r_server)))
-  {
-    fprintf(stderr, "%s\n", strerror(errno));
-    goto error;
-  }
- 
   while (1)
   {
-    int nready = 0;
-    int transmission_flag = 0;
     client_node *cur_client = NULL;
-    struct timeval burst_cur_time;
-    struct timeval *select_timeout = NULL;
+    int nready = 0;
+    struct timespec *timeout = NULL;
+    struct timespec burst_rem_time;
 
-    burst_cur_time = burst_init(&r_server.last_burst,
-                                &r_server.list_of_clients); 
-    
-    transmission_flag = init_sets(&r_server);
-    if (r_server.list_of_clients.size && !transmission_flag)
+    if (0 > server_select_analysis(&r_server, &timeout, &burst_rem_time))
+      goto finish_server;
+
+    nready = pselect(r_server.maxfd_number + 1,
+                     &r_server.sets.read_s, &r_server.sets.write_s,
+                     &r_server.sets.except_s, timeout, &orig_mask);
+    if (shut_down)
+      goto finish_server;
+    else if (alter_config_var)
     {
-      struct timeval burst_rem_time = burst_remain_time(&burst_cur_time);
-      select_timeout = &burst_rem_time;
+      alter_config(&r_server);
+      alter_config_var = 0;
     }
-    
-    nready = select(r_server.maxfd_number + 1, &r_server.sets.read_s,
-                      &r_server.sets.write_s, &r_server.sets.except_s,
-                      select_timeout);
-    
-    if (0 > nready)
+    else if (0 > nready)
     {
       if (EINTR == errno)
         continue;
-     
-      goto error;
+
+      goto finish_server;
+    }
+
+    if (FD_ISSET(r_server.l_socket, &r_server.sets.read_s))
+    {
+      server_recv_thread_signals(&r_server);
+      server_process_thread_signals(&r_server);
+      
+      if (0 >= --nready)
+        continue;
     }
 
     if (FD_ISSET(r_server.listenfd, &r_server.sets.read_s))
     {
-      if (0 > make_connection(&r_server))
+      if (0 > server_make_connection(&r_server))
         continue;
 
       if (0 >= --nready)
         continue;
     }
 
-    if (!transmission_flag)
-      continue;
-
-    cur_client = r_server.list_of_clients.head;
+    cur_client = r_server.l_clients.head;
     while(cur_client)
     {
       int sockfd = cur_client->sockfd;
 
       if (FD_ISSET(sockfd, &r_server.sets.read_s))
       {
-        if (0 > recv_client_msg(cur_client))
+        if (0 != server_read_client_request(cur_client) ||
+            0 != server_verify_request(&r_server, cur_client))
         {
-          remove_client(&cur_client, &r_server.list_of_clients);
+          server_client_remove(&cur_client, &r_server);
           continue;
         }
 
-        if (cur_client->status & REQUEST_RECEIVED)
-          verify_request(r_server.serv_root, cur_client);
+        if (0 != server_recv_response(cur_client) ||
+            0 != server_process_write_file(cur_client, &r_server))
+        {
+          server_client_remove(&cur_client, &r_server);
+          continue;
+        }
 
         if (0 >= --nready)
           break;
@@ -88,25 +130,27 @@ int main(int argc, const char **argv)
      
       if (FD_ISSET(sockfd, &r_server.sets.write_s))
       {
-        if (0 != create_header(cur_client) ||
-            0 != build_response(cur_client) || 
-            0 != send_response(cur_client))
+        if (0 != server_build_header(cur_client) ||
+            0 != server_send_response(cur_client) ||
+            0 != server_process_read_file(cur_client, &r_server))
         {
-          remove_client(&cur_client, &r_server.list_of_clients);
+          server_client_remove(&cur_client, &r_server);
           continue;
         }
 
-        if (cur_client->status & FINISHED &&
-            !(cur_client->status & PENDING_DATA))
+        if (cur_client->status & FINISHED)
         {
-          remove_client(&cur_client, &r_server.list_of_clients);
+          server_client_remove(&cur_client, &r_server);
           continue;
         }
+
+        if (0 >= --nready)
+          break;
       }
 
       if (FD_ISSET(sockfd, &r_server.sets.except_s))
       {
-          remove_client(&cur_client, &r_server.list_of_clients);
+          server_client_remove(&cur_client, &r_server);
           continue;
       }
 
@@ -116,9 +160,7 @@ int main(int argc, const char **argv)
 
   return 0;
 
-error:
-  if (r_server.listenfd)
-    close(r_server.listenfd);
+finish_server:
+  clean_up_server(&r_server);
   return -1;
 }
-

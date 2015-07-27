@@ -11,9 +11,13 @@
  */
 static void *threadpool_thread(void *cur_threadpool)
 {
+  int bytes_sent;
+  char signal_str[SIGNAL_LEN];
   threadpool *pool = (threadpool *) cur_threadpool;
   task_node *task = NULL;
 
+  memset(signal_str, 0, sizeof(signal_str));
+  
   while (1)
   {
     pthread_mutex_lock(&(pool->lock));
@@ -25,16 +29,16 @@ static void *threadpool_thread(void *cur_threadpool)
       break;
 
     task = pool->queue->head;
-    remove_task_f_list(pool->queue->head, pool->queue);
+    task_node_pop_first(pool->queue);
 
     pthread_mutex_unlock(&(pool->lock));
 
     (*(task->function))(task->argument);
 
-    // quando a funcao terminar, comunica com um socket a thread 
-    // principal (analisar)
-    
-    free_task_node(task);
+    sprintf(signal_str, "%p", task->argument);
+    bytes_sent = send(pool->l_socket, signal_str, SIGNAL_LEN, 0);
+
+    task_node_free(task);
   }
   
   pthread_mutex_unlock(&(pool->lock));
@@ -44,20 +48,34 @@ static void *threadpool_thread(void *cur_threadpool)
 
 /*! \brief Funcao que inicia um pool de threads que ja esteja alocado
  *
- * \param[in] pool O pool a ser iniciado
+ * \param[in] lsocket_name O nome do socket local da thread principal
+ * \param[out] pool O pool a ser iniciado
  *
  * \return -1 Caso haja erro
  * \return 0 Caso ok
  */
-int threadpool_init(threadpool *pool)
+int threadpool_init(const char *lsocket_name, threadpool *pool) 
 {
   int i;
+  struct sockaddr_un main_t_address;
+  socklen_t address_len = sizeof(struct sockaddr_un);
 
   if (!pool) 
     return -1;
 
   pool->threads = (pthread_t *) calloc(THREAD_NUM, sizeof(pthread_t));
-  pool->queue = (task_list *) calloc (1, sizeof(task_list));
+  pool->queue = (task_list *) calloc(1, sizeof(task_list));
+
+  if (0 > (pool->l_socket = socket(AF_UNIX, SOCK_DGRAM, 0)))
+    return -1;
+
+  memset(&main_t_address, 0, sizeof(main_t_address));
+  main_t_address.sun_family = AF_UNIX;
+  strcpy(main_t_address.sun_path, lsocket_name);
+
+  if (0 > connect(pool->l_socket,
+                   (struct sockaddr *) &main_t_address, address_len))
+    goto error;
 
   if (pthread_mutex_init(&(pool->lock), NULL) ||
       pthread_cond_init(&(pool->notify), NULL) ||
@@ -65,13 +83,9 @@ int threadpool_init(threadpool *pool)
     goto error;
 
   for (i = 0; i < THREAD_NUM; i++)
-  {
     if (pthread_create(&(pool->threads[i]), NULL, threadpool_thread, 
        (void*)pool))
       goto error;
-    
-    pool->thread_count++;
-  }
 
   return 0;
 
@@ -100,9 +114,9 @@ int threadpool_add(void (*function)(void *), void *argument,
   if (pthread_mutex_lock(&(pool->lock)))
     return -1;
 
-  if(!(new_node = alloc_task_node(function, argument)))
+  if(!(new_node = task_node_alloc(function, argument)))
     return -1;
-  append_task_to_list(new_node, pool->queue);
+  task_node_append(new_node, pool->queue);
 
   if (pthread_cond_signal(&(pool->notify)))
     return -1;
@@ -127,6 +141,9 @@ int threadpool_destroy(threadpool *pool)
   if (!pool)
     return -1;
 
+  if (0 < pool->l_socket)
+    close(pool->l_socket);
+
   if (pthread_mutex_lock(&(pool->lock)))
     return -1;
 
@@ -135,7 +152,7 @@ int threadpool_destroy(threadpool *pool)
       pthread_mutex_unlock(&(pool->lock)))
     return -1;
 
-  for (i = 0; i < pool->thread_count; i++)
+  for (i = 0; i < THREAD_NUM; i++)
     if (pthread_join(pool->threads[i], NULL))
         return -1;
 
@@ -160,7 +177,7 @@ int threadpool_destroy(threadpool *pool)
  * \return NULL Caso haja erro
  * \return task_node Caso ok
  */
-task_node *alloc_task_node(void (*function)(void *), void *argument)
+task_node *task_node_alloc(void (*function)(void *), void *argument)
 {
   task_node *new_node = NULL;
   
@@ -180,7 +197,7 @@ task_node *alloc_task_node(void (*function)(void *), void *argument)
  * \return -1 Caso haja erro
  * \return 0 Caso ok
  */
-int free_task_node(task_node *node)
+int task_node_free(task_node *node)
 {
   if (!node)
     return -1;
@@ -194,7 +211,7 @@ int free_task_node(task_node *node)
  * \param[in] new_node O novo no a ser adicionado
  * \param[out] queue A lista
  */
-void append_task_to_list(task_node *new_node, task_list *queue)
+void task_node_append(task_node *new_node, task_list *queue)
 {
   task_node *last_node = NULL;
 
@@ -207,38 +224,30 @@ void append_task_to_list(task_node *new_node, task_list *queue)
       ;
 
     last_node->next = new_node;
-    new_node->before = last_node;
+    new_node->prev = last_node;
   }
 
   queue->size++;
 }
 
-/*! \brief Remove um elemento da lista
+/*! \brief Remove o primeiro elemento da lista
  *
- * \param[in] node O no a ser eliminado da lista
+ * \param[in] node O no' a ser eliminado da lista
  * \param[out] queue A lista
  *
  * \return -1 Caso haja erro
  * \return 0 Caso ok
  */
-int remove_task_f_list(task_node *node, task_list *queue)
+task_node *task_node_pop_first(task_list *queue)
 {
-  if (!node || !queue->size)
-    return -1;
+  task_node *task_to_remove = NULL;
 
-  if (node == queue->head)
-    queue->head = node->next;
-  else
-  {
-    if (node->next)
-      node->next->before = node->before;
+  if (!queue->size)
+    return task_to_remove;
 
-    if (node->before)
-      node->before->next = node->next;
-  }
-
+  task_to_remove = queue->head;
+  queue->head = queue->head->next;
   queue->size--;
-  return 0;
-}
 
-    
+  return task_to_remove;
+}
