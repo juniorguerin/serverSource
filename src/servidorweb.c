@@ -72,14 +72,12 @@ int main(int argc, const char **argv)
                      &r_server.sets.except_s, timeout, &orig_mask);
     if (shut_down)
       goto finish_server;
-
-    if (alter_config_var)
+    else if (alter_config_var)
     {
       alter_config(&r_server);
       alter_config_var = 0;
     }
-
-    if (0 > nready)
+    else if (0 > nready)
     {
       if (EINTR == errno)
         continue;

@@ -1259,9 +1259,9 @@ static int server_read_config_file(const char *config_file_path,
 {
   FILE *config_file;
   char config_str[PATH_MAX];
-  char *new_root;
-  char *new_vel_str;
-  char *new_port_str;
+  char *new_root = NULL;
+  char *new_vel_str = NULL;
+  char *new_port_str = NULL;
   int new_vel;
   int new_port;
   int new_listenfd;
@@ -1274,11 +1274,11 @@ static int server_read_config_file(const char *config_file_path,
   if (0 >= fread(config_str, sizeof(char), PATH_MAX, config_file))
     return -1;
 
-  new_root = strtok(config_str, " ");
-  new_port_str = strtok(NULL, " ");
-  new_vel_str = strtok(NULL, " ");
+  new_root = strtok(config_str, "\n");
+  new_port_str = strtok(NULL, "\n");
+  new_vel_str = strtok(NULL, "\n");
 
-  if (strlen(new_port_str) > 0)
+  if (strlen(new_port_str) > 1)
   {
     new_port = strtol(new_port_str, NULL, NUMBER_BASE);
 
@@ -1292,10 +1292,10 @@ static int server_read_config_file(const char *config_file_path,
 
   if (strlen(new_root) > ROOT_LEN)
     return -1;
-  else if (strlen(new_root) > 0)
-    strcpy(r_server->serv_root, new_root);
+  else if (strlen(new_root) > 1)
+    strncpy(r_server->serv_root, new_root, strlen(new_root) - 1);
 
-  if (strlen(new_vel_str) > 0)
+  if (strlen(new_vel_str) > 1)
   {
     new_vel = strtol(new_vel_str, NULL, NUMBER_BASE);
     r_server->velocity = new_vel;
