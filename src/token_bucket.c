@@ -69,7 +69,6 @@ void bucket_burst_remain_time(const struct timespec *burst_cur_time,
 
   timespecsub(&burst_total_time, burst_cur_time, burst_rem_time);
 }
-*/
 
 /*! \brief Recarrega todos os buckets a cada 1 segundo
  *

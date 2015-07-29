@@ -1258,29 +1258,27 @@ static int server_read_config_file(const char *config_file_path,
                                    server *r_server)
 {
   FILE *config_file;
-  char config_str[PATH_MAX];
-  char *new_root = NULL;
-  char *new_vel_str = NULL;
-  char *new_port_str = NULL;
+  char *config[CONFIG_PARAM_NUM];
+  size_t len = ROOT_LEN;
+  int cont;
   int new_vel;
   int new_port;
   int new_listenfd;
 
-  memset(config_str, 0, sizeof(config_str));
-
   if (!(config_file = fopen(config_file_path, "r")))
     return -1;
 
-  if (0 >= fread(config_str, sizeof(char), PATH_MAX, config_file))
-    return -1;
+  for (cont = 0; cont < CONFIG_PARAM_NUM; cont++)
+    if (!(config[cont] = (char *) calloc(ROOT_LEN, sizeof(char))))
+      return -1;
 
-  new_root = strtok(config_str, "\n");
-  new_port_str = strtok(NULL, "\n");
-  new_vel_str = strtok(NULL, "\n");
+  /* A funcao getline armazena o terminador tambem */
+  for (cont = 0; -1 != getline(&config[cont], &len, config_file); cont++)
+    ;
 
-  if (strlen(new_port_str) > 1)
+  if (1 < strlen(config[1]))
   {
-    new_port = strtol(new_port_str, NULL, NUMBER_BASE);
+    new_port = strtol(config[1], NULL, NUMBER_BASE);
 
     if (new_port != r_server->listen_port)
     {
@@ -1293,17 +1291,18 @@ static int server_read_config_file(const char *config_file_path,
     }
   }
 
-  if (strlen(new_root) > ROOT_LEN)
+  if (ROOT_LEN < strlen(config[0]))
     return -1;
-  else if (strlen(new_root) > 1)
+  
+  if (1 < strlen(config[0]))
   {
     memset(r_server->serv_root, 0, sizeof(r_server->serv_root));
-    strncpy(r_server->serv_root, new_root, strlen(new_root) - 1);
+    strncpy(r_server->serv_root, config[0], strlen(config[0]) - 1);
   }
 
-  if (strlen(new_vel_str) > 1)
+  if (1 < strlen(config[2]))
   {
-    new_vel = strtol(new_vel_str, NULL, NUMBER_BASE);
+    new_vel = strtol(config[2], NULL, NUMBER_BASE);
     r_server->velocity = new_vel;
   }
 

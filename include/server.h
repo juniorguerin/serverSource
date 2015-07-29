@@ -40,7 +40,7 @@
 #define BUFFER_LEN BUFSIZ
 #define REQUEST_SIZE 1024
 #define LISTEN_BACKLOG 512
-#define ROOT_LEN 2048
+#define ROOT_LEN PATH_MAX
 #define NUMBER_BASE 10
 #define PORT_LEN 8
 #define VEL_LEN 12
@@ -56,6 +56,7 @@
 #define CONFIG_FILE "servidorWebConfig.txt"
 #define LOG_FILE "log.txt"
 #define PID_LEN 10
+#define CONFIG_PARAM_NUM 3
 
 #define READ_REQUEST 0x01
 #define REQUEST_RECEIVED 0x02
