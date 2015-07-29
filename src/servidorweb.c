@@ -74,8 +74,8 @@ int main(int argc, const char **argv)
       goto finish_server;
     else if (alter_config_var)
     {
-      alter_config(&r_server);
       alter_config_var = 0;
+      alter_config(&r_server);
     }
     else if (0 > nready)
     {
