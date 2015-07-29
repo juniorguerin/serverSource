@@ -1289,8 +1289,9 @@ static int server_read_config_file(const char *config_file_path,
       if (0 > (new_listenfd = server_create_listenfd(new_port)))
         goto exit;
 
-      close(r_server->listenfd);
+      int old_listenfd = r_server->listenfd;
       r_server->listenfd = new_listenfd;
+      close(old_listenfd);
       r_server->listen_port = new_port;
     }
   }
