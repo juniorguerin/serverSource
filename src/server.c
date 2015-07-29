@@ -1214,6 +1214,33 @@ void clean_up_server(server *r_server)
   }
 }
 
+/* \brief Funcao que troca o socket de escuta do servidor.
+ *
+ * \param[in] new_port O novo valor para a porta
+ * \param[out] r_server O servidor
+ *
+ * \return 0 Caso ok
+ * \return -1 Caso haja erro
+ */
+static int server_change_listenfd(int new_port, server *r_server)
+{
+  int new_listenfd;
+  int old_listenfd;
+
+  if (new_port != r_server->listen_port)
+  {
+    if (0 > (new_listenfd = server_create_listenfd(new_port)))
+      return -1;
+
+    old_listenfd = r_server->listenfd;
+    r_server->listenfd = new_listenfd;
+    close(old_listenfd);
+    r_server->listen_port = new_port;
+  }
+
+  return 0;
+}
+
 /* \brief Escreve um arquivo com o pid do processo, com path especificado por
  * define
  *
@@ -1263,7 +1290,6 @@ static int server_read_config_file(const char *config_file_path,
   int cont;
   int new_vel;
   int new_port;
-  int new_listenfd;
   const int error = -1, success = 0;
   int ret = error;
 
@@ -1284,16 +1310,8 @@ static int server_read_config_file(const char *config_file_path,
   {
     new_port = strtol(config[PORT_CONFIG], NULL, NUMBER_BASE);
 
-    if (new_port != r_server->listen_port)
-    {
-      if (0 > (new_listenfd = server_create_listenfd(new_port)))
-        goto exit;
-
-      int old_listenfd = r_server->listenfd;
-      r_server->listenfd = new_listenfd;
-      close(old_listenfd);
-      r_server->listen_port = new_port;
-    }
+    if (0 > server_change_listenfd(new_port, r_server))
+      goto exit;
   }
 
   if (ROOT_LEN < strlen(config[ROOT_CONFIG]))
