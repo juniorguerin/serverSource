@@ -422,24 +422,24 @@ void server_process_cli_status(client_node *client)
   if (!(client->status & PENDING_DATA) && (client->status & READ_DATA))
   {
     client->status = 0;
-    client->status = client->status | FINISHED;
+    client->status |= FINISHED;
   }
 
   if (client->status & WRITE_HEADER)
   {
-    client->status = client->status & (~WRITE_HEADER);
+    client->status &= (~WRITE_HEADER);
 
     if (client->resp_status != OK)
     {
       client->status = 0;
-      client->status = client->status | FINISHED;
+      client->status |= FINISHED;
     }
   }
 
   if (client->task_st == (task_status) FINISHED)
   {
     client->status = 0;
-    client->status = client->status | FINISHED;
+    client->status |= FINISHED;
   }
 }
 
@@ -711,8 +711,8 @@ int server_read_client_request(client_node *client)
   if ((pos_header = server_verify_double_line(client->buffer)))
   {
     client->pos_header = pos_header - client->buffer;
-    client->status = client->status & (~READ_REQUEST);
-    client->status = client->status | REQUEST_RECEIVED;
+    client->status &= (~READ_REQUEST);
+    client->status |= REQUEST_RECEIVED;
   }
 
   return 0; 
@@ -741,17 +741,17 @@ int server_verify_request(server *r_server, client_node *client)
   server_verify_cli_method(method, client);
   server_verify_cli_resource(resource, r_server, client);
 
-  client->status = client->status & (~REQUEST_RECEIVED);
+  client->status &= (~REQUEST_RECEIVED);
 
   if (client->resp_status == OK)
   {
     if (client->method == PUT)
-      client->status = client->status | READ_DATA;
+      client->status |= READ_DATA;
     else
-      client->status = client->status | WRITE_HEADER | WRITE_DATA;
+      client->status |= (WRITE_HEADER | WRITE_DATA);
   }
   else
-    client->status = client->status | WRITE_HEADER | WRITE_DATA;
+    client->status |= (WRITE_HEADER | WRITE_DATA);
 
   return 0;
 }
@@ -838,7 +838,7 @@ int server_process_write_file(client_node *client, server *r_server)
                          &r_server->thread_pool))
     return -1;
 
-  client->status = client->status | SIGNAL_WAIT;
+  client->status |= SIGNAL_WAIT;
   return 0;
 }
 
@@ -870,7 +870,7 @@ int server_process_read_file(client_node *client, server *r_server)
                          &r_server->thread_pool))
     return -1;
 
-  client->status = client->status | SIGNAL_WAIT;
+  client->status |= SIGNAL_WAIT;
   return 0;
 }
 
@@ -903,7 +903,7 @@ int server_recv_response(client_node *client)
   {
     if (EINTR == errno || EAGAIN == errno || EWOULDBLOCK == errno)
     {
-      client->status = client->status | PENDING_DATA;
+      client->status |= PENDING_DATA;
       return 0;
     }
 
@@ -911,13 +911,12 @@ int server_recv_response(client_node *client)
   }
 
   bucket_withdraw(b_received, &client->bucket);
-  client->status = client->status & (~PENDING_DATA);
+  client->status &= (~PENDING_DATA);
   client->pos_buf = b_received;
 
   if (b_received < b_to_receive)
   {
-    client->status = client->status | WRITE_DATA;
-    client->status = client->status | WRITE_HEADER;
+    client->status |= (WRITE_DATA | WRITE_HEADER);
   }
 
   return 0;
@@ -944,7 +943,7 @@ int server_send_response(client_node *client)
   {
     if (EINTR == errno || EAGAIN == errno || EWOULDBLOCK == errno)
     {
-      client->status = client->status | PENDING_DATA;
+      client->status |= PENDING_DATA;
       return 0;
     }
     
@@ -953,7 +952,7 @@ int server_send_response(client_node *client)
 
   bucket_withdraw(b_sent, &client->bucket);
   client->pos_buf = 0;
-  client->status = client->status & (~PENDING_DATA);
+  client->status &= (~PENDING_DATA);
   server_process_cli_status(client);
   return 0;
 }
@@ -1008,7 +1007,7 @@ void server_process_thread_signals(server *r_server)
       client_node_free(cur_client);
     }
     else
-      cur_client->status = cur_client->status & (~SIGNAL_WAIT);
+      cur_client->status &= (~SIGNAL_WAIT);
 
     cont++;
   }
