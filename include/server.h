@@ -67,6 +67,10 @@
 #define PENDING_DATA 0x40
 #define FINISHED 0x80
 
+#define ROOT_CONFIG 0
+#define PORT_CONFIG 1
+#define VEL_CONFIG 2
+
 extern const char *supported_methods[];
 typedef enum http_methods_
 {

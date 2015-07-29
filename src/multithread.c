@@ -160,7 +160,15 @@ int threadpool_destroy(threadpool *pool)
     free(pool->threads);
 
   if (pool->queue)
+  {
+    while (pool->queue->head)
+    {
+      task_node *task = task_node_pop_first(pool->queue);
+      task_node_free(task);
+    }
+
     free(pool->queue);
+  }
 
   if (pthread_mutex_destroy(&(pool->lock)) ||
       pthread_cond_destroy(&(pool->notify)))

@@ -1264,26 +1264,30 @@ static int server_read_config_file(const char *config_file_path,
   int new_vel;
   int new_port;
   int new_listenfd;
+  const int error = -1, success = 0;
+  int ret = error;
+
+  memset(config, 0, sizeof(config));
 
   if (!(config_file = fopen(config_file_path, "r")))
-    return -1;
+    return error;
 
   for (cont = 0; cont < CONFIG_PARAM_NUM; cont++)
     if (!(config[cont] = (char *) calloc(ROOT_LEN, sizeof(char))))
-      return -1;
+      goto exit;
 
   /* A funcao getline armazena o terminador tambem */
   for (cont = 0; -1 != getline(&config[cont], &len, config_file); cont++)
     ;
 
-  if (1 < strlen(config[1]))
+  if (1 < strlen(config[PORT_CONFIG]))
   {
-    new_port = strtol(config[1], NULL, NUMBER_BASE);
+    new_port = strtol(config[PORT_CONFIG], NULL, NUMBER_BASE);
 
     if (new_port != r_server->listen_port)
     {
       if (0 > (new_listenfd = server_create_listenfd(new_port)))
-        return -1;
+        goto exit;
 
       close(r_server->listenfd);
       r_server->listenfd = new_listenfd;
@@ -1291,22 +1295,32 @@ static int server_read_config_file(const char *config_file_path,
     }
   }
 
-  if (ROOT_LEN < strlen(config[0]))
-    return -1;
+  if (ROOT_LEN < strlen(config[ROOT_CONFIG]))
+    goto exit;
   
-  if (1 < strlen(config[0]))
+  if (1 < strlen(config[ROOT_CONFIG]))
   {
     memset(r_server->serv_root, 0, sizeof(r_server->serv_root));
-    strncpy(r_server->serv_root, config[0], strlen(config[0]) - 1);
+    strncpy(r_server->serv_root, config[ROOT_CONFIG],
+            strlen(config[ROOT_CONFIG]) - 1);
   }
 
-  if (1 < strlen(config[2]))
+  if (1 < strlen(config[VEL_CONFIG]))
   {
-    new_vel = strtol(config[2], NULL, NUMBER_BASE);
+    new_vel = strtol(config[VEL_CONFIG], NULL, NUMBER_BASE);
     r_server->velocity = new_vel;
   }
 
-  return 0;
+  ret = success;
+
+exit:
+  for (cont = 0; cont < CONFIG_PARAM_NUM; cont++)
+    if (config[cont])
+      free(config[cont]);
+
+  if (config_file)
+    fclose(config_file);
+  return ret;
 }
 
 /* \brief Escreve mensagem de erro em arquivo de log
