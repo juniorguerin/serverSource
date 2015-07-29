@@ -43,7 +43,7 @@ static void *threadpool_thread(void *cur_threadpool)
   
   pthread_mutex_unlock(&(pool->lock));
   pthread_exit(NULL);
-  return (NULL);
+  return NULL;
 }
 
 /*! \brief Funcao que inicia um pool de threads que ja esteja alocado
