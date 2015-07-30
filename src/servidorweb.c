@@ -64,7 +64,8 @@ int main(int argc, const char **argv)
     struct timespec *timeout = NULL;
     struct timespec burst_rem_time;
 
-    if (0 > server_select_analysis(&r_server, &timeout, &burst_rem_time))
+    if (0 > server_select_analysis(&r_server, &timeout,
+                                   &burst_rem_time))
       goto finish_server;
 
     nready = pselect(r_server.maxfd_number + 1,

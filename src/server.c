@@ -1197,7 +1197,9 @@ void clean_up_server(server *r_server)
     close(r_server->listenfd);
   if (r_server->l_socket)
     close(r_server->l_socket);
-  threadpool_destroy(&r_server->thread_pool);
+  
+  if (r_server->thread_pool.threads)
+    threadpool_destroy(&r_server->thread_pool);
 
   client = r_server->l_clients.head;
   while (client)

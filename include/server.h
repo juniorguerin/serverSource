@@ -50,8 +50,8 @@
 #define STR_PROTOCOL_LEN STR(PROTOCOL_LEN)
 #define STR_METHOD_LEN STR(METHOD_LEN)
 #define STR_RESOURCE_LEN STR(RESOURCE_LEN)
-#define LSOCK_NAME "/home/junior/Documentos/treinamento/treinamento.socket"
-#define CONFIG_PATH "/home/junior/Documentos/treinamento/serverConfig/"
+#define LSOCK_NAME "/home/nilson.junior/Documentos/treinamento/treinamento.socket"
+#define CONFIG_PATH "/home/nilson.junior/Documentos/treinamento/serverConfig/"
 #define PID_FILE "servidorWeb.pid"
 #define CONFIG_FILE "servidorWebConfig.txt"
 #define LOG_FILE "log.txt"
